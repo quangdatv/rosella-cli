@@ -14,6 +14,11 @@ export class GitManager {
       const branches: BranchInfo[] = [];
 
       for (const [name, branch] of Object.entries(branchSummary.branches)) {
+        // Filter out remote branches
+        if (name.startsWith('remotes/') || name.includes('origin/')) {
+          continue;
+        }
+
         branches.push({
           name,
           current: branch.current,
@@ -22,10 +27,12 @@ export class GitManager {
         });
       }
 
-      // Sort: current branch first, then alphabetically
+      // Sort: current -> main/master -> other
       return branches.sort((a, b) => {
         if (a.current) return -1;
         if (b.current) return 1;
+        if (a.name === 'main' || a.name === 'master') return -1;
+        if (b.name === 'main' || b.name === 'master') return 1;
         return a.name.localeCompare(b.name);
       });
     } catch (error) {
