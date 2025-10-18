@@ -3,9 +3,10 @@ import type { BranchSummary } from 'simple-git';
 
 // Mock the simple-git module
 const mockGit = {
-  branch: vi.fn<() => Promise<BranchSummary>>(),
+  branch: vi.fn<(args?: string[]) => Promise<BranchSummary | void>>(),
   checkout: vi.fn<(branchName: string) => Promise<void>>(),
   status: vi.fn<() => Promise<any>>(),
+  deleteLocalBranch: vi.fn<(branchName: string, force?: boolean) => Promise<void>>(),
 };
 
 const mockSimpleGit = vi.fn(() => mockGit);
@@ -14,7 +15,7 @@ vi.mock('simple-git', () => ({
   simpleGit: mockSimpleGit,
 }));
 
-const { GitManager } = await import('../../utils/git.js');
+const { GitManager, validateBranchName } = await import('../../utils/git.js');
 
 describe('GitManager', () => {
   let gitManager: InstanceType<typeof GitManager>;
@@ -195,5 +196,137 @@ describe('GitManager', () => {
 
       expect(result).toBe(false);
     });
+  });
+
+  describe('deleteBranch', () => {
+    it('should delete a branch with safe delete (force=false)', async () => {
+      mockGit.deleteLocalBranch.mockResolvedValue(undefined);
+
+      await gitManager.deleteBranch('feature-1', false);
+
+      expect(mockGit.deleteLocalBranch).toHaveBeenCalledWith('feature-1');
+      expect(mockGit.deleteLocalBranch).toHaveBeenCalledTimes(1);
+    });
+
+    it('should delete a branch with force delete (force=true)', async () => {
+      mockGit.deleteLocalBranch.mockResolvedValue(undefined);
+
+      await gitManager.deleteBranch('feature-1', true);
+
+      expect(mockGit.deleteLocalBranch).toHaveBeenCalledWith('feature-1', true);
+      expect(mockGit.deleteLocalBranch).toHaveBeenCalledTimes(1);
+    });
+
+    it('should use safe delete by default when force parameter is omitted', async () => {
+      mockGit.deleteLocalBranch.mockResolvedValue(undefined);
+
+      await gitManager.deleteBranch('feature-1');
+
+      expect(mockGit.deleteLocalBranch).toHaveBeenCalledWith('feature-1');
+    });
+
+    it('should throw helpful error when branch is not fully merged', async () => {
+      const gitError = new Error('error: The branch \'feature-1\' is not fully merged.');
+      mockGit.deleteLocalBranch.mockRejectedValue(gitError);
+
+      await expect(gitManager.deleteBranch('feature-1', false)).rejects.toThrow(
+        "Branch 'feature-1' is not fully merged. Use Shift+Delete to force delete."
+      );
+    });
+
+    it('should throw generic error for force delete failures', async () => {
+      mockGit.deleteLocalBranch.mockRejectedValue(new Error('Some other error'));
+
+      await expect(gitManager.deleteBranch('feature-1', true)).rejects.toThrow(
+        "Failed to delete branch 'feature-1'"
+      );
+    });
+
+    it('should throw generic error for other delete failures', async () => {
+      mockGit.deleteLocalBranch.mockRejectedValue(new Error('Permission denied'));
+
+      await expect(gitManager.deleteBranch('feature-1', false)).rejects.toThrow(
+        "Failed to delete branch 'feature-1'"
+      );
+    });
+  });
+
+  describe('createBranch', () => {
+    it('should create a new branch', async () => {
+      mockGit.branch.mockResolvedValue(undefined);
+
+      await gitManager.createBranch('new-feature');
+
+      expect(mockGit.branch).toHaveBeenCalledWith(['new-feature']);
+      expect(mockGit.branch).toHaveBeenCalledTimes(1);
+    });
+
+    it('should throw error when branch already exists', async () => {
+      const gitError = new Error("fatal: A branch named 'new-feature' already exists.");
+      mockGit.branch.mockRejectedValue(gitError);
+
+      await expect(gitManager.createBranch('new-feature')).rejects.toThrow(
+        "Branch 'new-feature' already exists"
+      );
+    });
+
+    it('should throw generic error for other create failures', async () => {
+      mockGit.branch.mockRejectedValue(new Error('Some other error'));
+
+      await expect(gitManager.createBranch('new-feature')).rejects.toThrow(
+        "Failed to create branch 'new-feature'"
+      );
+    });
+  });
+});
+
+describe('validateBranchName', () => {
+  it('should accept valid branch names', () => {
+    expect(validateBranchName('feature-1').valid).toBe(true);
+    expect(validateBranchName('fix/bug-123').valid).toBe(true);
+    expect(validateBranchName('dev').valid).toBe(true);
+    expect(validateBranchName('feature_branch').valid).toBe(true);
+  });
+
+  it('should reject empty branch names', () => {
+    const result = validateBranchName('');
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe('Branch name cannot be empty');
+  });
+
+  it('should reject branch names with spaces', () => {
+    const result = validateBranchName('feature branch');
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe('Branch name cannot contain spaces');
+  });
+
+  it('should reject branch names starting with -', () => {
+    const result = validateBranchName('-feature');
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe('Branch name cannot start with - or .');
+  });
+
+  it('should reject branch names starting with .', () => {
+    const result = validateBranchName('.feature');
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe('Branch name cannot start with - or .');
+  });
+
+  it('should reject branch names ending with .lock', () => {
+    const result = validateBranchName('feature.lock');
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe('Branch name cannot end with .lock');
+  });
+
+  it('should reject branch names with invalid characters', () => {
+    expect(validateBranchName('feature~1').valid).toBe(false);
+    expect(validateBranchName('feature^1').valid).toBe(false);
+    expect(validateBranchName('feature:fix').valid).toBe(false);
+    expect(validateBranchName('feature?').valid).toBe(false);
+    expect(validateBranchName('feature*').valid).toBe(false);
+    expect(validateBranchName('feature[1]').valid).toBe(false);
+    expect(validateBranchName('feature..bad').valid).toBe(false);
+    expect(validateBranchName('feature@{bad}').valid).toBe(false);
+    expect(validateBranchName('feature//bad').valid).toBe(false);
   });
 });

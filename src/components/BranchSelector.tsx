@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useApp, useStdout } from 'ink';
 import type { BranchInfo, SearchState } from '../types/index.js';
-import { GitManager } from '../utils/git.js';
+import { GitManager, validateBranchName } from '../utils/git.js';
 
 interface Props {
   gitManager: GitManager;
@@ -23,6 +23,19 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
     query: '',
     mode: 'normal',
   });
+  const [confirmation, setConfirmation] = useState<{
+    active: boolean;
+    branchName: string;
+    force: boolean;
+  } | null>(null);
+  const [creation, setCreation] = useState<{
+    active: boolean;
+    branchName: string;
+  }>({ active: false, branchName: '' });
+  const [checkoutPrompt, setCheckoutPrompt] = useState<{
+    active: boolean;
+    branchName: string;
+  } | null>(null);
 
   useEffect(() => {
     loadBranches();
@@ -106,6 +119,123 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
     }
   };
 
+  const handleDeleteRequest = (force: boolean) => {
+    if (filteredBranches.length === 0) return;
+
+    const selectedBranch = filteredBranches[selectedIndex];
+
+    // Prevent deleting current branch
+    if (selectedBranch.current) {
+      setError('Cannot delete the currently checked out branch');
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+
+    // Show confirmation dialog
+    setConfirmation({
+      active: true,
+      branchName: selectedBranch.name,
+      force,
+    });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!confirmation) return;
+
+    const { branchName, force } = confirmation;
+
+    try {
+      await gitManager.deleteBranch(branchName, force);
+
+      // Clear confirmation
+      setConfirmation(null);
+
+      // Reload branches
+      await loadBranches();
+
+      // Show success message
+      const deleteType = force ? 'Force deleted' : 'Deleted';
+      setMessage(`${deleteType} branch '${branchName}'`);
+      setTimeout(() => setMessage(null), 2000);
+
+      // Keep selectedIndex at same position (will select next branch)
+      // The filtered branches will be updated by loadBranches
+    } catch (err) {
+      setConfirmation(null);
+      setError(err instanceof Error ? err.message : 'Delete failed');
+      setTimeout(() => setError(null), 3000);
+    }
+  };
+
+  const handleCancelDelete = () => {
+    setConfirmation(null);
+  };
+
+  const handleCreateRequest = () => {
+    setCreation({ active: true, branchName: '' });
+  };
+
+  const handleConfirmCreate = async () => {
+    const branchName = creation.branchName.trim();
+
+    // Validate branch name
+    const validation = validateBranchName(branchName);
+    if (!validation.valid) {
+      setError(validation.error || 'Invalid branch name');
+      setTimeout(() => setError(null), 3000);
+      return; // Stay in creation mode
+    }
+
+    try {
+      await gitManager.createBranch(branchName);
+
+      // Clear creation state
+      setCreation({ active: false, branchName: '' });
+
+      // Show checkout prompt
+      setCheckoutPrompt({
+        active: true,
+        branchName,
+      });
+    } catch (err) {
+      // Show error but stay in creation mode for correction
+      setError(err instanceof Error ? err.message : 'Create failed');
+      setTimeout(() => setError(null), 3000);
+    }
+  };
+
+  const handleCheckoutPrompt = async (shouldCheckout: boolean) => {
+    if (!checkoutPrompt) return;
+
+    const { branchName } = checkoutPrompt;
+
+    // Clear checkout prompt
+    setCheckoutPrompt(null);
+
+    if (shouldCheckout) {
+      // Checkout the new branch
+      try {
+        await gitManager.checkoutBranch(branchName);
+        setMessage(`Switched to branch '${branchName}'`);
+        setTimeout(() => {
+          exit();
+        }, 1000);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Checkout failed');
+        setTimeout(() => setError(null), 3000);
+      }
+    } else {
+      // Don't checkout, just refresh and show success
+      await loadBranches();
+      setMessage(`Created branch '${branchName}'`);
+      setTimeout(() => setMessage(null), 2000);
+    }
+  };
+
+  const handleCancelCreate = () => {
+    setCreation({ active: false, branchName: '' });
+  };
+
   // Calculate viewport size - use full terminal height like vim
   // Account for: header (1), message (1 if present), status bar (1), blank line (1), search input (1 if active)
   const getViewportHeight = () => {
@@ -115,10 +245,44 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
   };
 
   useInput((input, key) => {
+    // Handle checkout prompt mode
+    if (checkoutPrompt?.active) {
+      if (input === 'y' || input === 'Y') {
+        handleCheckoutPrompt(true);
+      } else if (input === 'n' || input === 'N' || key.escape) {
+        handleCheckoutPrompt(false);
+      }
+      return;
+    }
+
+    // Handle confirmation mode
+    if (confirmation?.active) {
+      if (input === 'y' || input === 'Y') {
+        handleConfirmDelete();
+      } else if (input === 'n' || input === 'N' || key.escape) {
+        handleCancelDelete();
+      }
+      return;
+    }
+
     // Handle help mode
     if (showHelp) {
       if (key.escape || input === 'q' || input === 'h') {
         setShowHelp(false);
+      }
+      return;
+    }
+
+    // Handle creation mode
+    if (creation.active) {
+      if (key.escape) {
+        handleCancelCreate();
+      } else if (key.return) {
+        handleConfirmCreate();
+      } else if (key.backspace || key.delete) {
+        setCreation((prev) => ({ ...prev, branchName: prev.branchName.slice(0, -1) }));
+      } else if (input) {
+        setCreation((prev) => ({ ...prev, branchName: prev.branchName + input }));
       }
       return;
     }
@@ -178,6 +342,14 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
       setSearch({ active: true, query: '', mode: 'regex' });
     } else if (input === 'h') {
       setShowHelp(true);
+    } else if (input === 'n') {
+      handleCreateRequest();
+    } else if (key.delete && key.shift) {
+      // Shift+Delete for force delete
+      handleDeleteRequest(true);
+    } else if (key.delete) {
+      // Delete for safe delete
+      handleDeleteRequest(false);
     }
   });
 
@@ -202,6 +374,11 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
           <Text bold>Navigation</Text>
           <Text>  <Text color="cyan">↑/↓</Text> or <Text color="cyan">j/k</Text>  Navigate up/down</Text>
           <Text>  <Text color="cyan">Enter</Text>      Checkout selected branch</Text>
+          <Text></Text>
+          <Text bold>Branch Actions</Text>
+          <Text>  <Text color="cyan">n</Text>           Create new branch from current</Text>
+          <Text>  <Text color="cyan">Delete</Text>       Safe delete branch (git branch -d)</Text>
+          <Text>  <Text color="cyan">Shift+Del</Text>   Force delete branch (git branch -D)</Text>
           <Text></Text>
           <Text bold>Search</Text>
           <Text>  <Text color="cyan">/</Text>          Start search (fuzzy match)</Text>
@@ -235,6 +412,22 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
       {message && (
         <Box>
           <Text color="green">{message}</Text>
+        </Box>
+      )}
+
+      {confirmation?.active && (
+        <Box>
+          <Text color="yellow">
+            {confirmation.force ? 'Force delete' : 'Delete'} branch '{confirmation.branchName}'? (y/n)
+          </Text>
+        </Box>
+      )}
+
+      {checkoutPrompt?.active && (
+        <Box>
+          <Text color="cyan">
+            Branch '{checkoutPrompt.branchName}' created. Checkout now? (y/n)
+          </Text>
         </Box>
       )}
 
@@ -307,6 +500,16 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
           <Text>
             {search.mode === 'regex' ? ':' : '/'}
             {search.query}
+            <Text inverse> </Text>
+          </Text>
+        </Box>
+      )}
+
+      {/* Creation input at bottom */}
+      {creation.active && (
+        <Box>
+          <Text>
+            New branch: {creation.branchName}
             <Text inverse> </Text>
           </Text>
         </Box>
