@@ -289,8 +289,9 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
             const percentage = filteredBranches.length > 0
               ? Math.round(((selectedIndex + 1) / filteredBranches.length) * 100)
               : 0;
+            const leftPart = ` [press h for help] - line ${selectedIndex + 1} of ${filteredBranches.length}`;
             const percentageStr = `${percentage}%`.padStart(4); // Ensures consistent width: "  1%", " 10%", "100%"
-            return ` [press h for help] - line ${selectedIndex + 1} of ${filteredBranches.length}${' '.repeat(50)}${percentageStr} `;
+            return `${leftPart.padEnd(70)}${percentageStr} `;
           })()}
         </Text>
       </Box>
