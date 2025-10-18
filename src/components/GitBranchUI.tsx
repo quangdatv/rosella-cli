@@ -5,7 +5,8 @@ import { GitManager, validateBranchName } from '../utils/git.js';
 import { Help } from './Help.js';
 import { BranchList } from './BranchList.js';
 import { StatusBar } from './StatusBar.js';
-import { BottomBar } from './BottomBar.js';
+import { PromptBar } from './PromptBar.js';
+import { Header } from './Header.js';
 
 interface Props {
   gitManager: GitManager;
@@ -126,6 +127,7 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
       await gitManager.checkoutBranch(selectedBranch.name);
       await loadBranches();
       setSelectedIndex(0);
+      setTopIndex(0); // Reset viewport to show first line
       setMessage(`Switched to branch '${selectedBranch.name}'`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Checkout failed');
@@ -226,6 +228,7 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
         await gitManager.checkoutBranch(branchName);
         await loadBranches();
         setSelectedIndex(0);
+        setTopIndex(0); // Reset viewport to show first line
         setMessage(`Switched to branch '${branchName}'`);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Checkout failed');
@@ -233,7 +236,27 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
     } else {
       // Don't checkout, just refresh and show success
       await loadBranches();
-      setSelectedIndex(savedSelectionIndex);
+
+      // Restore saved selection and ensure it's visible in viewport
+      const newSelectedIndex = Math.min(savedSelectionIndex, filteredBranches.length - 1);
+      setSelectedIndex(newSelectedIndex);
+
+      // Calculate topIndex to ensure the saved selection is visible
+      const viewportHeight = getViewportHeight();
+      const maxTopIndex = Math.max(0, filteredBranches.length - viewportHeight);
+      let newTopIndex = topIndex;
+
+      // If saved selection is above current viewport, scroll up
+      if (newSelectedIndex < topIndex) {
+        newTopIndex = newSelectedIndex;
+      }
+      // If saved selection is below current viewport, scroll down
+      else if (newSelectedIndex >= topIndex + viewportHeight) {
+        newTopIndex = Math.min(newSelectedIndex - viewportHeight + 1, maxTopIndex);
+      }
+      // Otherwise keep current topIndex if selection is already visible
+
+      setTopIndex(newTopIndex);
       setMessage(`Created branch '${branchName}'`);
     }
   };
@@ -243,11 +266,50 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
   };
 
   // Calculate viewport size - use full terminal height like vim
-  // Account for: header (1), message (1 if present), status bar (1), blank line (1), search input (1 if active)
+  // Account for: header (2), prompt bar (1), status bar (1), borders (2)
   const getViewportHeight = () => {
     const terminalHeight = stdout?.rows || 24;
-    const uiOverhead = 3 + (message ? 1 : 0) + (search.active ? 1 : 0);
+    const uiOverhead = 6; // Header (2 lines) + PromptBar + StatusBar + TopBorder + BottomBorder
+    // Return content area height (excluding borders which are rendered by the Box component)
     return Math.max(1, terminalHeight - uiOverhead);
+  };
+
+  // Helper function to calculate navigation indices
+  // This batches the state updates to prevent screen flashing
+  const calculateNavigation = (
+    direction: 'up' | 'down',
+    currentIndex: number,
+    currentTopIndex: number,
+    listLength: number
+  ): { newIndex: number; newTopIndex: number } => {
+    const viewportHeight = getViewportHeight();
+    let newIndex: number;
+    let newTopIndex = currentTopIndex;
+
+    if (direction === 'up') {
+      newIndex = currentIndex > 0 ? currentIndex - 1 : listLength - 1;
+
+      // Scroll viewport if needed
+      if (newIndex < currentTopIndex) {
+        newTopIndex = newIndex;
+      } else if (newIndex === listLength - 1 && currentIndex === 0) {
+        // Wrapped to bottom
+        newTopIndex = Math.max(0, listLength - viewportHeight);
+      }
+    } else {
+      // down
+      newIndex = currentIndex < listLength - 1 ? currentIndex + 1 : 0;
+
+      // Scroll viewport if needed
+      if (newIndex >= currentTopIndex + viewportHeight) {
+        newTopIndex = currentTopIndex + 1;
+      } else if (newIndex === 0 && currentIndex === listLength - 1) {
+        // Wrapped to top
+        newTopIndex = 0;
+      }
+    }
+
+    return { newIndex, newTopIndex };
   };
 
   useInput((input, key) => {
@@ -288,7 +350,32 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
       } else if (key.return) {
         handleConfirmCreate();
       } else if (key.backspace || key.delete) {
-        setCreation((prev) => ({ ...prev, branchName: prev.branchName.slice(0, -1) }));
+        // If input is empty, close the prompt
+        if (creation.branchName.length === 0) {
+          handleCancelCreate();
+        } else {
+          setCreation((prev) => ({ ...prev, branchName: prev.branchName.slice(0, -1) }));
+        }
+      } else if (key.upArrow) {
+        // Allow navigation in creation mode
+        const { newIndex, newTopIndex } = calculateNavigation(
+          'up',
+          selectedIndex,
+          topIndex,
+          filteredBranches.length
+        );
+        setSelectedIndex(newIndex);
+        setTopIndex(newTopIndex);
+      } else if (key.downArrow) {
+        // Allow navigation in creation mode
+        const { newIndex, newTopIndex } = calculateNavigation(
+          'down',
+          selectedIndex,
+          topIndex,
+          filteredBranches.length
+        );
+        setSelectedIndex(newIndex);
+        setTopIndex(newTopIndex);
       } else if (input) {
         setCreation((prev) => ({ ...prev, branchName: prev.branchName + input }));
       }
@@ -311,38 +398,26 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
           const newQuery = prev.query.slice(0, -1);
           return { ...prev, query: newQuery };
         });
-      } else if (key.upArrow || input === 'k') {
+      } else if (key.upArrow) {
         // Allow navigation in search mode
-        setSelectedIndex((prev) => {
-          const newIndex = prev > 0 ? prev - 1 : filteredBranches.length - 1;
-
-          // Scroll viewport if needed
-          if (newIndex < topIndex) {
-            setTopIndex(newIndex);
-          } else if (newIndex === filteredBranches.length - 1 && prev === 0) {
-            // Wrapped to bottom
-            const viewportHeight = getViewportHeight();
-            setTopIndex(Math.max(0, filteredBranches.length - viewportHeight));
-          }
-
-          return newIndex;
-        });
-      } else if (key.downArrow || input === 'j') {
+        const { newIndex, newTopIndex } = calculateNavigation(
+          'up',
+          selectedIndex,
+          topIndex,
+          filteredBranches.length
+        );
+        setSelectedIndex(newIndex);
+        setTopIndex(newTopIndex);
+      } else if (key.downArrow) {
         // Allow navigation in search mode
-        setSelectedIndex((prev) => {
-          const newIndex = prev < filteredBranches.length - 1 ? prev + 1 : 0;
-          const viewportHeight = getViewportHeight();
-
-          // Scroll viewport if needed
-          if (newIndex >= topIndex + viewportHeight) {
-            setTopIndex(topIndex + 1);
-          } else if (newIndex === 0 && prev === filteredBranches.length - 1) {
-            // Wrapped to top
-            setTopIndex(0);
-          }
-
-          return newIndex;
-        });
+        const { newIndex, newTopIndex } = calculateNavigation(
+          'down',
+          selectedIndex,
+          topIndex,
+          filteredBranches.length
+        );
+        setSelectedIndex(newIndex);
+        setTopIndex(newTopIndex);
       } else if (input) {
         setSearch((prev) => ({ ...prev, query: prev.query + input }));
       }
@@ -353,35 +428,27 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
     if (key.escape || input === 'q') {
       exit();
     } else if (key.upArrow || input === 'k') {
-      setSelectedIndex((prev) => {
-        const newIndex = prev > 0 ? prev - 1 : filteredBranches.length - 1;
-
-        // Scroll viewport if needed
-        if (newIndex < topIndex) {
-          setTopIndex(newIndex);
-        } else if (newIndex === filteredBranches.length - 1 && prev === 0) {
-          // Wrapped to bottom
-          const viewportHeight = getViewportHeight();
-          setTopIndex(Math.max(0, filteredBranches.length - viewportHeight));
-        }
-
-        return newIndex;
-      });
+      const { newIndex, newTopIndex } = calculateNavigation(
+        'up',
+        selectedIndex,
+        topIndex,
+        filteredBranches.length
+      );
+      setSelectedIndex(newIndex);
+      setTopIndex(newTopIndex);
+      // Clear message on navigation
+      if (message) setMessage(null);
     } else if (key.downArrow || input === 'j') {
-      setSelectedIndex((prev) => {
-        const newIndex = prev < filteredBranches.length - 1 ? prev + 1 : 0;
-        const viewportHeight = getViewportHeight();
-
-        // Scroll viewport if needed
-        if (newIndex >= topIndex + viewportHeight) {
-          setTopIndex(topIndex + 1);
-        } else if (newIndex === 0 && prev === filteredBranches.length - 1) {
-          // Wrapped to top
-          setTopIndex(0);
-        }
-
-        return newIndex;
-      });
+      const { newIndex, newTopIndex } = calculateNavigation(
+        'down',
+        selectedIndex,
+        topIndex,
+        filteredBranches.length
+      );
+      setSelectedIndex(newIndex);
+      setTopIndex(newTopIndex);
+      // Clear message on navigation
+      if (message) setMessage(null);
     } else if (key.return) {
       handleCheckout();
     } else if (input === '/') {
@@ -413,9 +480,53 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
 
   // Main branch list view
   const viewportHeight = getViewportHeight();
+  const version = '1.0.0'; // TODO: Get from package.json
+  const cwd = process.cwd();
+
+  // Determine prompt bar content and mode
+  const getPromptBarProps = (): { text: string; mode: 'input' | 'keyListen' } => {
+    if (confirmation?.active) {
+      return {
+        text: `Delete branch '${confirmation.branchName}'? (y=normal, f=force, other=cancel)`,
+        mode: 'keyListen',
+      };
+    }
+
+    if (checkoutPrompt?.active) {
+      return {
+        text: `Branch '${checkoutPrompt.branchName}' created. Checkout now? (y/n)`,
+        mode: 'keyListen',
+      };
+    }
+
+    if (search.active) {
+      const prefix = search.mode === 'regex' ? 'Regex search: ' : 'Fuzzy search: ';
+      return {
+        text: prefix + search.query,
+        mode: 'input',
+      };
+    }
+
+    if (creation.active) {
+      return {
+        text: `New branch: ${creation.branchName}`,
+        mode: 'input',
+      };
+    }
+
+    // Default empty state
+    return {
+      text: '',
+      mode: 'input',
+    };
+  };
+
+  const promptBarProps = getPromptBarProps();
 
   return (
     <Box flexDirection="column">
+      <Header version={version} cwd={cwd} />
+
       <BranchList
         branches={filteredBranches}
         selectedIndex={selectedIndex}
@@ -423,16 +534,11 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
         viewportHeight={viewportHeight}
       />
 
+      <PromptBar text={promptBarProps.text} mode={promptBarProps.mode} />
+
       <StatusBar
         selectedIndex={selectedIndex}
         totalBranches={filteredBranches.length}
-      />
-
-      <BottomBar
-        confirmation={confirmation}
-        checkoutPrompt={checkoutPrompt}
-        search={search}
-        creation={creation}
         message={message}
       />
     </Box>

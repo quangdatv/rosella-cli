@@ -103,4 +103,47 @@ describe('StatusBar', () => {
       expect(output).toBeDefined();
     });
   });
+
+  describe('Message Display', () => {
+    it('should display message when provided', () => {
+      const { lastFrame } = render(
+        <StatusBar selectedIndex={0} totalBranches={5} message="Branch switched successfully" />
+      );
+
+      const output = lastFrame();
+      expect(output).toContain('Branch switched successfully');
+      expect(output).not.toContain('[press h for help]');
+      expect(output).not.toContain('line 1 of 5');
+    });
+
+    it('should prioritize message over default status', () => {
+      const { lastFrame } = render(
+        <StatusBar selectedIndex={2} totalBranches={10} message="Already on this branch" />
+      );
+
+      const output = lastFrame();
+      expect(output).toContain('Already on this branch');
+      expect(output).not.toContain('line 3 of 10');
+    });
+
+    it('should show default status when message is null', () => {
+      const { lastFrame } = render(
+        <StatusBar selectedIndex={0} totalBranches={5} message={null} />
+      );
+
+      const output = lastFrame();
+      expect(output).toContain('[press h for help]');
+      expect(output).toContain('line 1 of 5');
+    });
+
+    it('should show default status when message is undefined', () => {
+      const { lastFrame } = render(
+        <StatusBar selectedIndex={0} totalBranches={5} />
+      );
+
+      const output = lastFrame();
+      expect(output).toContain('[press h for help]');
+      expect(output).toContain('line 1 of 5');
+    });
+  });
 });

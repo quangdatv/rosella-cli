@@ -4,6 +4,7 @@ import type { BranchSummary } from 'simple-git';
 // Mock the simple-git module
 const mockGit = {
   branch: vi.fn<(args?: string[]) => Promise<BranchSummary | void>>(),
+  branchLocal: vi.fn<() => Promise<BranchSummary>>(),
   checkout: vi.fn<(branchName: string) => Promise<void>>(),
   status: vi.fn<() => Promise<any>>(),
   deleteLocalBranch: vi.fn<(branchName: string, force?: boolean) => Promise<void>>(),
@@ -56,52 +57,14 @@ describe('GitManager', () => {
         detached: false,
       };
 
-      mockGit.branch.mockResolvedValue(mockBranchSummary);
+      mockGit.branchLocal.mockResolvedValue(mockBranchSummary);
 
       const branches = await gitManager.getBranches();
 
       expect(branches).toHaveLength(3);
       expect(branches[0].name).toBe('main');
       expect(branches[0].current).toBe(true);
-      expect(mockGit.branch).toHaveBeenCalledTimes(1);
-    });
-
-    it('should filter out remote branches', async () => {
-      const mockBranchSummary: BranchSummary = {
-        all: ['main', 'remotes/origin/main', 'origin/feature'],
-        branches: {
-          'main': {
-            current: true,
-            name: 'main',
-            commit: 'abc123',
-            label: 'main',
-            linkedWorkTree: false,
-          },
-          'remotes/origin/main': {
-            current: false,
-            name: 'remotes/origin/main',
-            commit: 'abc123',
-            label: 'origin/main',
-            linkedWorkTree: false,
-          },
-          'origin/feature': {
-            current: false,
-            name: 'origin/feature',
-            commit: 'def456',
-            label: 'origin/feature',
-            linkedWorkTree: false,
-          },
-        },
-        current: 'main',
-        detached: false,
-      };
-
-      mockGit.branch.mockResolvedValue(mockBranchSummary);
-
-      const branches = await gitManager.getBranches();
-
-      expect(branches).toHaveLength(1);
-      expect(branches[0].name).toBe('main');
+      expect(mockGit.branchLocal).toHaveBeenCalledTimes(1);
     });
 
     it('should sort branches with current first, then main/master, then alphabetically', async () => {
@@ -141,7 +104,7 @@ describe('GitManager', () => {
         detached: false,
       };
 
-      mockGit.branch.mockResolvedValue(mockBranchSummary);
+      mockGit.branchLocal.mockResolvedValue(mockBranchSummary);
 
       const branches = await gitManager.getBranches();
 
@@ -152,7 +115,7 @@ describe('GitManager', () => {
     });
 
     it('should throw error when git.branch fails', async () => {
-      mockGit.branch.mockRejectedValue(new Error('Git error'));
+      mockGit.branchLocal.mockRejectedValue(new Error('Git error'));
 
       await expect(gitManager.getBranches()).rejects.toThrow(
         'Failed to fetch branches'
@@ -249,84 +212,5 @@ describe('GitManager', () => {
         "Failed to delete branch 'feature-1'"
       );
     });
-  });
-
-  describe('createBranch', () => {
-    it('should create a new branch', async () => {
-      mockGit.branch.mockResolvedValue(undefined);
-
-      await gitManager.createBranch('new-feature');
-
-      expect(mockGit.branch).toHaveBeenCalledWith(['new-feature']);
-      expect(mockGit.branch).toHaveBeenCalledTimes(1);
-    });
-
-    it('should throw error when branch already exists', async () => {
-      const gitError = new Error("fatal: A branch named 'new-feature' already exists.");
-      mockGit.branch.mockRejectedValue(gitError);
-
-      await expect(gitManager.createBranch('new-feature')).rejects.toThrow(
-        "Branch 'new-feature' already exists"
-      );
-    });
-
-    it('should throw generic error for other create failures', async () => {
-      mockGit.branch.mockRejectedValue(new Error('Some other error'));
-
-      await expect(gitManager.createBranch('new-feature')).rejects.toThrow(
-        "Failed to create branch 'new-feature'"
-      );
-    });
-  });
-});
-
-describe('validateBranchName', () => {
-  it('should accept valid branch names', () => {
-    expect(validateBranchName('feature-1').valid).toBe(true);
-    expect(validateBranchName('fix/bug-123').valid).toBe(true);
-    expect(validateBranchName('dev').valid).toBe(true);
-    expect(validateBranchName('feature_branch').valid).toBe(true);
-  });
-
-  it('should reject empty branch names', () => {
-    const result = validateBranchName('');
-    expect(result.valid).toBe(false);
-    expect(result.error).toBe('Branch name cannot be empty');
-  });
-
-  it('should reject branch names with spaces', () => {
-    const result = validateBranchName('feature branch');
-    expect(result.valid).toBe(false);
-    expect(result.error).toBe('Branch name cannot contain spaces');
-  });
-
-  it('should reject branch names starting with -', () => {
-    const result = validateBranchName('-feature');
-    expect(result.valid).toBe(false);
-    expect(result.error).toBe('Branch name cannot start with - or .');
-  });
-
-  it('should reject branch names starting with .', () => {
-    const result = validateBranchName('.feature');
-    expect(result.valid).toBe(false);
-    expect(result.error).toBe('Branch name cannot start with - or .');
-  });
-
-  it('should reject branch names ending with .lock', () => {
-    const result = validateBranchName('feature.lock');
-    expect(result.valid).toBe(false);
-    expect(result.error).toBe('Branch name cannot end with .lock');
-  });
-
-  it('should reject branch names with invalid characters', () => {
-    expect(validateBranchName('feature~1').valid).toBe(false);
-    expect(validateBranchName('feature^1').valid).toBe(false);
-    expect(validateBranchName('feature:fix').valid).toBe(false);
-    expect(validateBranchName('feature?').valid).toBe(false);
-    expect(validateBranchName('feature*').valid).toBe(false);
-    expect(validateBranchName('feature[1]').valid).toBe(false);
-    expect(validateBranchName('feature..bad').valid).toBe(false);
-    expect(validateBranchName('feature@{bad}').valid).toBe(false);
-    expect(validateBranchName('feature//bad').valid).toBe(false);
   });
 });

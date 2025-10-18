@@ -45,15 +45,10 @@ export class GitManager {
 
   async getBranches(): Promise<BranchInfo[]> {
     try {
-      const branchSummary: BranchSummary = await this.git.branch();
+      const branchSummary: BranchSummary = await this.git.branchLocal();
       const branches: BranchInfo[] = [];
 
       for (const [name, branch] of Object.entries(branchSummary.branches)) {
-        // Filter out remote branches
-        if (name.startsWith('remotes/') || name.includes('origin/')) {
-          continue;
-        }
-
         branches.push({
           name,
           current: branch.current,
