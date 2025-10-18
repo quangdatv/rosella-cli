@@ -2,12 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useApp, useStdout } from 'ink';
 import type { BranchInfo, SearchState } from '../types/index.js';
 import { GitManager, validateBranchName } from '../utils/git.js';
+import { Help } from './Help.js';
+import { BranchList } from './BranchList.js';
+import { StatusBar } from './StatusBar.js';
+import { BottomBar } from './BottomBar.js';
 
 interface Props {
   gitManager: GitManager;
 }
 
-export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
+export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const [branches, setBranches] = useState<BranchInfo[]>([]);
@@ -26,7 +30,6 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
   const [confirmation, setConfirmation] = useState<{
     active: boolean;
     branchName: string;
-    force: boolean;
   } | null>(null);
   const [creation, setCreation] = useState<{
     active: boolean;
@@ -36,6 +39,7 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
     active: boolean;
     branchName: string;
   } | null>(null);
+  const [savedSelectionIndex, setSavedSelectionIndex] = useState<number>(0);
 
   useEffect(() => {
     loadBranches();
@@ -45,10 +49,22 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
     filterBranches();
   }, [branches, search.query, search.mode]);
 
-  // Reset viewport when filtered branches change
+  // Adjust selection when filtered branches change
   useEffect(() => {
-    setSelectedIndex(0);
-    setTopIndex(0);
+    if (filteredBranches.length === 0) {
+      setSelectedIndex(0);
+      setTopIndex(0);
+    } else if (selectedIndex >= filteredBranches.length) {
+      // If current selection is out of bounds, select the last item
+      const newIndex = filteredBranches.length - 1;
+      setSelectedIndex(newIndex);
+
+      // Adjust viewport to show the new selection
+      const viewportHeight = getViewportHeight();
+      const newTopIndex = Math.max(0, newIndex - viewportHeight + 1);
+      setTopIndex(newTopIndex);
+    }
+    // If selectedIndex is still valid, keep it as is
   }, [filteredBranches.length]);
 
   const loadBranches = async () => {
@@ -103,23 +119,20 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
     const selectedBranch = filteredBranches[selectedIndex];
     if (selectedBranch.current) {
       setMessage('Already on this branch');
-      setTimeout(() => setMessage(null), 2000);
       return;
     }
 
     try {
       await gitManager.checkoutBranch(selectedBranch.name);
+      await loadBranches();
+      setSelectedIndex(0);
       setMessage(`Switched to branch '${selectedBranch.name}'`);
-      setTimeout(() => {
-        exit();
-      }, 1000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Checkout failed');
-      setTimeout(() => setError(null), 3000);
     }
   };
 
-  const handleDeleteRequest = (force: boolean) => {
+  const handleDeleteRequest = () => {
     if (filteredBranches.length === 0) return;
 
     const selectedBranch = filteredBranches[selectedIndex];
@@ -127,7 +140,6 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
     // Prevent deleting current branch
     if (selectedBranch.current) {
       setError('Cannot delete the currently checked out branch');
-      setTimeout(() => setError(null), 3000);
       return;
     }
 
@@ -135,14 +147,13 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
     setConfirmation({
       active: true,
       branchName: selectedBranch.name,
-      force,
     });
   };
 
-  const handleConfirmDelete = async () => {
+  const handleConfirmDelete = async (force: boolean) => {
     if (!confirmation) return;
 
-    const { branchName, force } = confirmation;
+    const { branchName } = confirmation;
 
     try {
       await gitManager.deleteBranch(branchName, force);
@@ -156,14 +167,12 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
       // Show success message
       const deleteType = force ? 'Force deleted' : 'Deleted';
       setMessage(`${deleteType} branch '${branchName}'`);
-      setTimeout(() => setMessage(null), 2000);
 
       // Keep selectedIndex at same position (will select next branch)
       // The filtered branches will be updated by loadBranches
     } catch (err) {
       setConfirmation(null);
       setError(err instanceof Error ? err.message : 'Delete failed');
-      setTimeout(() => setError(null), 3000);
     }
   };
 
@@ -172,6 +181,7 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
   };
 
   const handleCreateRequest = () => {
+    setSavedSelectionIndex(selectedIndex);
     setCreation({ active: true, branchName: '' });
   };
 
@@ -182,7 +192,6 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
     const validation = validateBranchName(branchName);
     if (!validation.valid) {
       setError(validation.error || 'Invalid branch name');
-      setTimeout(() => setError(null), 3000);
       return; // Stay in creation mode
     }
 
@@ -200,7 +209,6 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
     } catch (err) {
       // Show error but stay in creation mode for correction
       setError(err instanceof Error ? err.message : 'Create failed');
-      setTimeout(() => setError(null), 3000);
     }
   };
 
@@ -216,19 +224,17 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
       // Checkout the new branch
       try {
         await gitManager.checkoutBranch(branchName);
+        await loadBranches();
+        setSelectedIndex(0);
         setMessage(`Switched to branch '${branchName}'`);
-        setTimeout(() => {
-          exit();
-        }, 1000);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Checkout failed');
-        setTimeout(() => setError(null), 3000);
       }
     } else {
       // Don't checkout, just refresh and show success
       await loadBranches();
+      setSelectedIndex(savedSelectionIndex);
       setMessage(`Created branch '${branchName}'`);
-      setTimeout(() => setMessage(null), 2000);
     }
   };
 
@@ -249,7 +255,7 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
     if (checkoutPrompt?.active) {
       if (input === 'y' || input === 'Y') {
         handleCheckoutPrompt(true);
-      } else if (input === 'n' || input === 'N' || key.escape) {
+      } else {
         handleCheckoutPrompt(false);
       }
       return;
@@ -258,9 +264,11 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
     // Handle confirmation mode
     if (confirmation?.active) {
       if (input === 'y' || input === 'Y') {
-        handleConfirmDelete();
-      } else if (input === 'n' || input === 'N' || key.escape) {
-        handleCancelDelete();
+        handleConfirmDelete(false); // Normal delete
+      } else if (input === 'f' || input === 'F') {
+        handleConfirmDelete(true); // Force delete
+      } else {
+        handleCancelDelete(); // Cancel on any other key
       }
       return;
     }
@@ -294,7 +302,47 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
       } else if (key.return) {
         setSearch((prev) => ({ ...prev, active: false }));
       } else if (key.backspace || key.delete) {
-        setSearch((prev) => ({ ...prev, query: prev.query.slice(0, -1) }));
+        setSearch((prev) => {
+          // If query is already empty, exit search mode
+          if (prev.query.length === 0) {
+            return { active: false, query: '', mode: 'normal' };
+          }
+          // Otherwise, delete the last character
+          const newQuery = prev.query.slice(0, -1);
+          return { ...prev, query: newQuery };
+        });
+      } else if (key.upArrow || input === 'k') {
+        // Allow navigation in search mode
+        setSelectedIndex((prev) => {
+          const newIndex = prev > 0 ? prev - 1 : filteredBranches.length - 1;
+
+          // Scroll viewport if needed
+          if (newIndex < topIndex) {
+            setTopIndex(newIndex);
+          } else if (newIndex === filteredBranches.length - 1 && prev === 0) {
+            // Wrapped to bottom
+            const viewportHeight = getViewportHeight();
+            setTopIndex(Math.max(0, filteredBranches.length - viewportHeight));
+          }
+
+          return newIndex;
+        });
+      } else if (key.downArrow || input === 'j') {
+        // Allow navigation in search mode
+        setSelectedIndex((prev) => {
+          const newIndex = prev < filteredBranches.length - 1 ? prev + 1 : 0;
+          const viewportHeight = getViewportHeight();
+
+          // Scroll viewport if needed
+          if (newIndex >= topIndex + viewportHeight) {
+            setTopIndex(topIndex + 1);
+          } else if (newIndex === 0 && prev === filteredBranches.length - 1) {
+            // Wrapped to top
+            setTopIndex(0);
+          }
+
+          return newIndex;
+        });
       } else if (input) {
         setSearch((prev) => ({ ...prev, query: prev.query + input }));
       }
@@ -344,12 +392,9 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
       setShowHelp(true);
     } else if (input === 'n') {
       handleCreateRequest();
-    } else if (key.delete && key.shift) {
-      // Shift+Delete for force delete
-      handleDeleteRequest(true);
     } else if (key.delete) {
-      // Delete for safe delete
-      handleDeleteRequest(false);
+      // Delete - will prompt for normal or force delete
+      handleDeleteRequest();
     }
   });
 
@@ -363,157 +408,33 @@ export const BranchSelector: React.FC<Props> = ({ gitManager }) => {
 
   // Help page view
   if (showHelp) {
-    return (
-      <Box flexDirection="column">
-        <Box>
-          <Text bold color="cyan">rosella - Help</Text>
-        </Box>
-
-        <Box flexDirection="column">
-          <Text></Text>
-          <Text bold>Navigation</Text>
-          <Text>  <Text color="cyan">↑/↓</Text> or <Text color="cyan">j/k</Text>  Navigate up/down</Text>
-          <Text>  <Text color="cyan">Enter</Text>      Checkout selected branch</Text>
-          <Text></Text>
-          <Text bold>Branch Actions</Text>
-          <Text>  <Text color="cyan">n</Text>           Create new branch from current</Text>
-          <Text>  <Text color="cyan">Delete</Text>       Safe delete branch (git branch -d)</Text>
-          <Text>  <Text color="cyan">Shift+Del</Text>   Force delete branch (git branch -D)</Text>
-          <Text></Text>
-          <Text bold>Search</Text>
-          <Text>  <Text color="cyan">/</Text>          Start search (fuzzy match)</Text>
-          <Text>  <Text color="cyan">:</Text>          Start regex search</Text>
-          <Text>  <Text color="cyan">Esc</Text>        Clear search</Text>
-          <Text></Text>
-          <Text bold>Other</Text>
-          <Text>  <Text color="cyan">h</Text>          Toggle this help</Text>
-          <Text>  <Text color="cyan">q</Text>          Quit</Text>
-        </Box>
-
-        {/* Spacer to push status bar to bottom */}
-        <Box flexGrow={1}></Box>
-
-        <Box>
-          <Text backgroundColor="blue" color="white">
-            {' Press h, q, or Esc to close help'.padEnd(80)}
-          </Text>
-        </Box>
-
-        <Box>
-          <Text></Text>
-        </Box>
-      </Box>
-    );
+    return <Help />;
   }
 
   // Main branch list view
+  const viewportHeight = getViewportHeight();
+
   return (
     <Box flexDirection="column">
-      {message && (
-        <Box>
-          <Text color="green">{message}</Text>
-        </Box>
-      )}
+      <BranchList
+        branches={filteredBranches}
+        selectedIndex={selectedIndex}
+        topIndex={topIndex}
+        viewportHeight={viewportHeight}
+      />
 
-      {confirmation?.active && (
-        <Box>
-          <Text color="yellow">
-            {confirmation.force ? 'Force delete' : 'Delete'} branch '{confirmation.branchName}'? (y/n)
-          </Text>
-        </Box>
-      )}
+      <StatusBar
+        selectedIndex={selectedIndex}
+        totalBranches={filteredBranches.length}
+      />
 
-      {checkoutPrompt?.active && (
-        <Box>
-          <Text color="cyan">
-            Branch '{checkoutPrompt.branchName}' created. Checkout now? (y/n)
-          </Text>
-        </Box>
-      )}
-
-      <Box flexDirection="column" flexGrow={1}>
-        {filteredBranches.length === 0 ? (
-          <Text dimColor>No branches found</Text>
-        ) : (
-          (() => {
-            const viewportHeight = getViewportHeight();
-            const visibleBranches = filteredBranches.slice(
-              topIndex,
-              topIndex + viewportHeight
-            );
-
-            return visibleBranches.map((branch, viewportIndex) => {
-              const actualIndex = topIndex + viewportIndex;
-              const isSelected = actualIndex === selectedIndex;
-
-              return (
-                <Box key={branch.name}>
-                  {isSelected ? (
-                    <Text inverse>
-                      {branch.current ? '* ' : '  '}
-                      {branch.name}
-                      <Text dimColor> ({branch.commit.substring(0, 7)})</Text>
-                    </Text>
-                  ) : (
-                    <Text>
-                      {branch.current ? (
-                        <Text color="green">* </Text>
-                      ) : (
-                        '  '
-                      )}
-                      {branch.name}
-                      <Text dimColor> ({branch.commit.substring(0, 7)})</Text>
-                    </Text>
-                  )}
-                </Box>
-              );
-            });
-          })()
-        )}
-      </Box>
-
-      {/* Status bar - tig style */}
-      <Box>
-        <Text backgroundColor="blue" color="white">
-          {(() => {
-            if (filteredBranches.length === 0) {
-              return ' No branches ';
-            }
-            const percentage = filteredBranches.length > 0
-              ? Math.round(((selectedIndex + 1) / filteredBranches.length) * 100)
-              : 0;
-            const leftPart = ` [press h for help] - line ${selectedIndex + 1} of ${filteredBranches.length}`;
-            const percentageStr = `${percentage}%`.padStart(4); // Ensures consistent width: "  1%", " 10%", "100%"
-            return `${leftPart.padEnd(70)}${percentageStr} `;
-          })()}
-        </Text>
-      </Box>
-
-      {/* Blank line below status bar */}
-      <Box>
-        <Text></Text>
-      </Box>
-
-      {/* Search input at bottom */}
-      {search.active && (
-        <Box>
-          <Text>
-            {search.mode === 'regex' ? ':' : '/'}
-            {search.query}
-            <Text inverse> </Text>
-          </Text>
-        </Box>
-      )}
-
-      {/* Creation input at bottom */}
-      {creation.active && (
-        <Box>
-          <Text>
-            New branch: {creation.branchName}
-            <Text inverse> </Text>
-          </Text>
-        </Box>
-      )}
+      <BottomBar
+        confirmation={confirmation}
+        checkoutPrompt={checkoutPrompt}
+        search={search}
+        creation={creation}
+        message={message}
+      />
     </Box>
   );
 };
