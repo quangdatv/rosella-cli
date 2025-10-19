@@ -17,7 +17,8 @@
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "prepublishOnly": "yarn lint && yarn test && yarn build"
   },
   "keywords": [
     "git",
@@ -27,6 +28,19 @@
   ],
   "author": "",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/quangdatv/rosella-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/quangdatv/rosella-cli/issues"
+  },
+  "homepage": "https://github.com/quangdatv/rosella-cli#readme",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
   "packageManager": "yarn@4.9.2",
   "dependencies": {
     "chalk": "^5.6.2",

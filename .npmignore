@@ -1,0 +1,62 @@
+# Source files
+src/
+*.ts
+!*.d.ts
+
+# Tests
+**/__tests__/
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+*.test.ts
+*.spec.ts
+test-*.tsx
+vitest.config.ts
+
+# Config files
+tsconfig.json
+eslint.config.js
+.eslintrc*
+.prettierrc*
+.editorconfig
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Development
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Yarn
+.yarn/
+.yarnrc.yml
+.pnp.*
+yarn.lock
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation (kept: README.md, LICENSE)
+CONTRIBUTING.md
+AGENTS.md
+docs/
+
+# Misc
+coverage/
+.nyc_output/
+node_modules/
