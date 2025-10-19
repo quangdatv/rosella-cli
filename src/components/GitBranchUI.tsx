@@ -32,9 +32,14 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
     active: boolean;
     branchName: string;
   } | null>(null);
+  const [forceDeletePrompt, setForceDeletePrompt] = useState<{
+    active: boolean;
+    branchName: string;
+  } | null>(null);
   const [creation, setCreation] = useState<{
     active: boolean;
     branchName: string;
+    validationError?: string;
   }>({ active: false, branchName: '' });
   const [checkoutPrompt, setCheckoutPrompt] = useState<{
     active: boolean;
@@ -42,31 +47,14 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
   } | null>(null);
   const [savedSelectionIndex, setSavedSelectionIndex] = useState<number>(0);
 
-  useEffect(() => {
-    loadBranches();
-  }, []);
-
-  useEffect(() => {
-    filterBranches();
-  }, [branches, search.query, search.mode]);
-
-  // Adjust selection when filtered branches change
-  useEffect(() => {
-    if (filteredBranches.length === 0) {
-      setSelectedIndex(0);
-      setTopIndex(0);
-    } else if (selectedIndex >= filteredBranches.length) {
-      // If current selection is out of bounds, select the last item
-      const newIndex = filteredBranches.length - 1;
-      setSelectedIndex(newIndex);
-
-      // Adjust viewport to show the new selection
-      const viewportHeight = getViewportHeight();
-      const newTopIndex = Math.max(0, newIndex - viewportHeight + 1);
-      setTopIndex(newTopIndex);
-    }
-    // If selectedIndex is still valid, keep it as is
-  }, [filteredBranches.length]);
+  // Calculate viewport size - use full terminal height like vim
+  // Account for: header (2), prompt bar (1), status bar (1), borders (2)
+  const getViewportHeight = () => {
+    const terminalHeight = stdout?.rows || 24;
+    const uiOverhead = 6; // Header (2 lines) + PromptBar + StatusBar + TopBorder + BottomBorder
+    // Return content area height (excluding borders which are rendered by the Box component)
+    return Math.max(1, terminalHeight - uiOverhead);
+  };
 
   const loadBranches = async () => {
     try {
@@ -114,11 +102,41 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
     setFilteredBranches(filtered);
   };
 
+  useEffect(() => {
+    loadBranches();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    filterBranches();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branches, search.query, search.mode]);
+
+  // Adjust selection when filtered branches change
+  useEffect(() => {
+    if (filteredBranches.length === 0) {
+      setSelectedIndex(0);
+      setTopIndex(0);
+    } else if (selectedIndex >= filteredBranches.length) {
+      // If current selection is out of bounds, select the last item
+      const newIndex = filteredBranches.length - 1;
+      setSelectedIndex(newIndex);
+
+      // Adjust viewport to show the new selection
+      const viewportHeight = getViewportHeight();
+      const newTopIndex = Math.max(0, newIndex - viewportHeight + 1);
+      setTopIndex(newTopIndex);
+    }
+    // If selectedIndex is still valid, keep it as is
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredBranches.length]);
+
   const handleCheckout = async () => {
     if (filteredBranches.length === 0) return;
 
     const selectedBranch = filteredBranches[selectedIndex];
     if (selectedBranch.current) {
+      setError(null);
       setMessage('Already on this branch');
       return;
     }
@@ -127,6 +145,7 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
       await gitManager.checkoutBranch(selectedBranch.name);
       await loadBranches();
       setSelectedIndex(0);
+      setError(null);
       setTopIndex(0); // Reset viewport to show first line
       setMessage(`Switched to branch '${selectedBranch.name}'`);
     } catch (err) {
@@ -146,6 +165,7 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
     }
 
     // Show confirmation dialog
+    setError(null);
     setConfirmation({
       active: true,
       branchName: selectedBranch.name,
@@ -168,13 +188,27 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
 
       // Show success message
       const deleteType = force ? 'Force deleted' : 'Deleted';
+      setError(null);
       setMessage(`${deleteType} branch '${branchName}'`);
 
       // Keep selectedIndex at same position (will select next branch)
       // The filtered branches will be updated by loadBranches
     } catch (err) {
-      setConfirmation(null);
-      setError(err instanceof Error ? err.message : 'Delete failed');
+      const errorMessage = err instanceof Error ? err.message : 'Delete failed';
+
+      // Check if error is due to unmerged changes
+      if (!force && errorMessage.includes('not fully merged')) {
+        // Clear initial confirmation and show force delete prompt
+        setConfirmation(null);
+        setForceDeletePrompt({
+          active: true,
+          branchName,
+        });
+      } else {
+        // Other errors - show error message
+        setConfirmation(null);
+        setError(errorMessage);
+      }
     }
   };
 
@@ -182,9 +216,37 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
     setConfirmation(null);
   };
 
+  const handleForceDelete = async () => {
+    if (!forceDeletePrompt) return;
+
+    const { branchName } = forceDeletePrompt;
+
+    try {
+      await gitManager.deleteBranch(branchName, true);
+
+      // Clear force delete prompt
+      setForceDeletePrompt(null);
+
+      // Reload branches
+      await loadBranches();
+
+      // Show success message
+      setError(null);
+      setMessage(`Force deleted branch '${branchName}'`);
+    } catch (err) {
+      setForceDeletePrompt(null);
+      setError(err instanceof Error ? err.message : 'Delete failed');
+    }
+  };
+
+  const handleCancelForceDelete = () => {
+    setForceDeletePrompt(null);
+  };
+
   const handleCreateRequest = () => {
     setSavedSelectionIndex(selectedIndex);
-    setCreation({ active: true, branchName: '' });
+    setError(null);
+    setCreation({ active: true, branchName: '', validationError: undefined });
   };
 
   const handleConfirmCreate = async () => {
@@ -193,7 +255,10 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
     // Validate branch name
     const validation = validateBranchName(branchName);
     if (!validation.valid) {
-      setError(validation.error || 'Invalid branch name');
+      setCreation((prev) => ({
+        ...prev,
+        validationError: validation.error || 'Invalid branch name'
+      }));
       return; // Stay in creation mode
     }
 
@@ -201,15 +266,24 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
       await gitManager.createBranch(branchName);
 
       // Clear creation state
-      setCreation({ active: false, branchName: '' });
+      setCreation({ active: false, branchName: '', validationError: undefined });
 
-      // Show checkout prompt
+      // Reload branches immediately to update UI
+      await loadBranches();
+
+      // Show success message in StatusBar
+      setError(null);
+      setMessage(`Branch '${branchName}' created`);
+
+      // Show checkout prompt in PromptBar
       setCheckoutPrompt({
         active: true,
         branchName,
       });
     } catch (err) {
-      // Show error but stay in creation mode for correction
+      // Clear creation state and show error in StatusBar
+      setCreation({ active: false, branchName: '', validationError: undefined });
+      setMessage(null);
       setError(err instanceof Error ? err.message : 'Create failed');
     }
   };
@@ -229,15 +303,15 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
         await loadBranches();
         setSelectedIndex(0);
         setTopIndex(0); // Reset viewport to show first line
+        setError(null);
         setMessage(`Switched to branch '${branchName}'`);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Checkout failed');
       }
     } else {
-      // Don't checkout, just refresh and show success
-      await loadBranches();
-
-      // Restore saved selection and ensure it's visible in viewport
+      // Don't checkout, the branch list was already reloaded
+      // The "Branch 'X' created" message is already showing in StatusBar
+      // Just restore saved selection and ensure it's visible in viewport
       const newSelectedIndex = Math.min(savedSelectionIndex, filteredBranches.length - 1);
       setSelectedIndex(newSelectedIndex);
 
@@ -257,21 +331,12 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
       // Otherwise keep current topIndex if selection is already visible
 
       setTopIndex(newTopIndex);
-      setMessage(`Created branch '${branchName}'`);
+      // Message is already set, no need to update it
     }
   };
 
   const handleCancelCreate = () => {
-    setCreation({ active: false, branchName: '' });
-  };
-
-  // Calculate viewport size - use full terminal height like vim
-  // Account for: header (2), prompt bar (1), status bar (1), borders (2)
-  const getViewportHeight = () => {
-    const terminalHeight = stdout?.rows || 24;
-    const uiOverhead = 6; // Header (2 lines) + PromptBar + StatusBar + TopBorder + BottomBorder
-    // Return content area height (excluding borders which are rendered by the Box component)
-    return Math.max(1, terminalHeight - uiOverhead);
+    setCreation({ active: false, branchName: '', validationError: undefined });
   };
 
   // Helper function to calculate navigation indices
@@ -323,12 +388,20 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
       return;
     }
 
+    // Handle force delete prompt mode
+    if (forceDeletePrompt?.active) {
+      if (input === 'y' || input === 'Y') {
+        handleForceDelete();
+      } else {
+        handleCancelForceDelete();
+      }
+      return;
+    }
+
     // Handle confirmation mode
     if (confirmation?.active) {
       if (input === 'y' || input === 'Y') {
         handleConfirmDelete(false); // Normal delete
-      } else if (input === 'f' || input === 'F') {
-        handleConfirmDelete(true); // Force delete
       } else {
         handleCancelDelete(); // Cancel on any other key
       }
@@ -354,7 +427,11 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
         if (creation.branchName.length === 0) {
           handleCancelCreate();
         } else {
-          setCreation((prev) => ({ ...prev, branchName: prev.branchName.slice(0, -1) }));
+          setCreation((prev) => ({
+            ...prev,
+            branchName: prev.branchName.slice(0, -1),
+            validationError: undefined
+          }));
         }
       } else if (key.upArrow) {
         // Allow navigation in creation mode
@@ -377,7 +454,11 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
         setSelectedIndex(newIndex);
         setTopIndex(newTopIndex);
       } else if (input) {
-        setCreation((prev) => ({ ...prev, branchName: prev.branchName + input }));
+        setCreation((prev) => ({ 
+          ...prev, 
+          branchName: prev.branchName + input,
+          validationError: undefined
+        }));
       }
       return;
     }
@@ -452,8 +533,10 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
     } else if (key.return) {
       handleCheckout();
     } else if (input === '/') {
+      setError(null);
       setSearch({ active: true, query: '', mode: 'normal' });
     } else if (input === ':') {
+      setError(null);
       setSearch({ active: true, query: '', mode: 'regex' });
     } else if (input === 'h') {
       setShowHelp(true);
@@ -467,10 +550,6 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
 
   if (loading) {
     return <Text>Loading branches...</Text>;
-  }
-
-  if (error) {
-    return <Text color="red">Error: {error}</Text>;
   }
 
   // Help page view
@@ -487,14 +566,21 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
   const getPromptBarProps = (): { text: string; mode: 'input' | 'keyListen' } => {
     if (confirmation?.active) {
       return {
-        text: `Delete branch '${confirmation.branchName}'? (y=normal, f=force, other=cancel)`,
+        text: `Delete branch '${confirmation.branchName}'? (y/n)`,
+        mode: 'keyListen',
+      };
+    }
+
+    if (forceDeletePrompt?.active) {
+      return {
+        text: `Branch '${forceDeletePrompt.branchName}' is not fully merged. Force delete? (y/n)`,
         mode: 'keyListen',
       };
     }
 
     if (checkoutPrompt?.active) {
       return {
-        text: `Branch '${checkoutPrompt.branchName}' created. Checkout now? (y/n)`,
+        text: `Checkout now? (y/n)`,
         mode: 'keyListen',
       };
     }
@@ -508,8 +594,12 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
     }
 
     if (creation.active) {
+      const baseText = `New branch: ${creation.branchName}`;
+      const text = creation.validationError
+        ? `${baseText} - Error: ${creation.validationError}`
+        : baseText;
       return {
-        text: `New branch: ${creation.branchName}`,
+        text,
         mode: 'input',
       };
     }
@@ -534,12 +624,13 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
         viewportHeight={viewportHeight}
       />
 
-      <PromptBar text={promptBarProps.text} mode={promptBarProps.mode} />
+      <PromptBar {...promptBarProps} />
 
       <StatusBar
         selectedIndex={selectedIndex}
         totalBranches={filteredBranches.length}
         message={message}
+        error={error}
       />
     </Box>
   );

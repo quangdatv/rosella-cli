@@ -28,7 +28,7 @@ export function validateBranchName(name: string): ValidationResult {
   }
 
   // Check for invalid characters: ~, ^, :, ?, *, [, \, @{
-  const invalidChars = /[~^:?*[\\\s]|\.\.|\@\{|\/\//;
+  const invalidChars = /[~^:?*[\\\s]|\.\.|@\{|\/\//;
   if (invalidChars.test(name)) {
     return { valid: false, error: 'Branch name contains invalid characters' };
   }

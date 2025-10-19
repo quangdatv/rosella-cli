@@ -5,14 +5,20 @@ interface Props {
   selectedIndex: number;
   totalBranches: number;
   message?: string | null;
+  error?: string | null;
 }
 
-export const StatusBar: React.FC<Props> = ({ selectedIndex, totalBranches, message }) => {
+export const StatusBar: React.FC<Props> = ({ selectedIndex, totalBranches, message, error }) => {
   const { stdout } = useStdout();
   const width = stdout?.columns || 80;
 
   const text = (() => {
-    // Message takes priority and overrides the default status
+    // Error takes highest priority
+    if (error) {
+      return ` ${error} `;
+    }
+
+    // Message takes priority over default status
     if (message) {
       return ` ${message} `;
     }
@@ -26,9 +32,13 @@ export const StatusBar: React.FC<Props> = ({ selectedIndex, totalBranches, messa
   // Pad to full width
   const paddedText = text + ' '.repeat(Math.max(0, width - text.length));
 
+  // Choose colors based on state
+  const backgroundColor = error ? 'red' : message ? 'green' : 'blue';
+  const textColor = 'white';
+
   return (
     <Box>
-      <Text backgroundColor="blue" color="white">
+      <Text backgroundColor={backgroundColor} color={textColor}>
         {paddedText}
       </Text>
     </Box>

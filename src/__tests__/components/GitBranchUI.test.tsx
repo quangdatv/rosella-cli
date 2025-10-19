@@ -2,6 +2,7 @@ import { render } from 'ink-testing-library';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { GitBranchUI } from '../../components/GitBranchUI.js';
 import type { BranchInfo } from '../../types/index.js';
+import type { GitManager } from '../../utils/git.js';
 
 // Mock GitManager
 vi.mock('../../utils/git.js', () => ({
@@ -18,7 +19,13 @@ vi.mock('../../utils/git.js', () => ({
 }));
 
 describe('GitBranchUI - Integration Tests', () => {
-  let mockGitManager: any;
+  let mockGitManager: {
+    getBranches: ReturnType<typeof vi.fn>;
+    checkoutBranch: ReturnType<typeof vi.fn>;
+    isGitRepository: ReturnType<typeof vi.fn>;
+    createBranch: ReturnType<typeof vi.fn>;
+    deleteBranch: ReturnType<typeof vi.fn>;
+  };
   let mockBranches: BranchInfo[];
 
   beforeEach(() => {
@@ -51,18 +58,18 @@ describe('GitBranchUI - Integration Tests', () => {
       isGitRepository: vi.fn().mockResolvedValue(true),
       createBranch: vi.fn().mockResolvedValue(undefined),
       deleteBranch: vi.fn().mockResolvedValue(undefined),
-    } as any;
+    };
   });
 
   describe('Initial Loading', () => {
     it('should render loading state initially', () => {
-      const { lastFrame } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { lastFrame } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       expect(lastFrame()).toContain('Loading branches');
     });
 
     it('should load and display branches after initialization', async () => {
-      const { lastFrame } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { lastFrame } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -75,7 +82,7 @@ describe('GitBranchUI - Integration Tests', () => {
     it('should show error when not in git repository', async () => {
       mockGitManager.isGitRepository.mockResolvedValue(false);
 
-      const { lastFrame } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { lastFrame } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -86,18 +93,18 @@ describe('GitBranchUI - Integration Tests', () => {
     it('should handle getBranches error', async () => {
       mockGitManager.getBranches.mockRejectedValue(new Error('Failed to get branches'));
 
-      const { lastFrame } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { lastFrame } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       const output = lastFrame();
-      expect(output).toContain('Error');
+      expect(output).toContain('Failed to get branches');
     });
   });
 
   describe('Branch Checkout Workflow', () => {
     it('should checkout branch when Enter is pressed on non-current branch', async () => {
-      const { stdin } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { stdin } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -113,7 +120,7 @@ describe('GitBranchUI - Integration Tests', () => {
     });
 
     it('should show message when trying to checkout current branch', async () => {
-      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -129,7 +136,7 @@ describe('GitBranchUI - Integration Tests', () => {
 
   describe('Branch Creation Workflow', () => {
     it('should complete full branch creation workflow', async () => {
-      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -153,7 +160,7 @@ describe('GitBranchUI - Integration Tests', () => {
     });
 
     it('should checkout new branch when accepted', async () => {
-      const { stdin } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { stdin } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -173,7 +180,7 @@ describe('GitBranchUI - Integration Tests', () => {
     });
 
     it('should validate branch name and show error', async () => {
-      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -195,7 +202,7 @@ describe('GitBranchUI - Integration Tests', () => {
     });
 
     it('should cancel creation with Escape', async () => {
-      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -213,8 +220,39 @@ describe('GitBranchUI - Integration Tests', () => {
   });
 
   describe('Branch Deletion Workflow', () => {
+    it('should show non-blocking error when delete fails due to unmerged changes', async () => {
+      mockGitManager.deleteBranch.mockRejectedValue(
+        new Error("Branch 'feature-1' is not fully merged. Use Shift+Delete to force delete.")
+      );
+
+      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Move to non-current branch
+      stdin.write('j');
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Press Delete
+      stdin.write('\x7F');
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Confirm deletion
+      stdin.write('y');
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const output = lastFrame();
+      // Error should be displayed
+      expect(output).toContain('not fully merged');
+      // But UI should still be interactive (branch list should still be visible)
+      expect(output).toContain('main');
+      expect(output).toContain('feature-1');
+      // Status bar should still be visible
+      expect(output).toContain('line');
+    });
+
     it('should complete full branch deletion workflow', async () => {
-      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -237,7 +275,7 @@ describe('GitBranchUI - Integration Tests', () => {
     });
 
     it('should prevent deleting current branch', async () => {
-      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -250,7 +288,7 @@ describe('GitBranchUI - Integration Tests', () => {
     });
 
     it('should cancel deletion with any key other than y', async () => {
-      const { stdin } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { stdin } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -268,11 +306,47 @@ describe('GitBranchUI - Integration Tests', () => {
 
       expect(mockGitManager.deleteBranch).not.toHaveBeenCalled();
     });
+
+    it('should clear error when a new message appears', async () => {
+      // First, cause an error - deletion will fail and show force delete prompt
+      mockGitManager.deleteBranch.mockRejectedValueOnce(
+        new Error("Branch 'feature-1' is not fully merged.")
+      );
+
+      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Move to non-current branch
+      stdin.write('j');
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Try to delete (will fail and show force delete prompt)
+      stdin.write('\x7F');
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      stdin.write('y');
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Verify force delete prompt is shown
+      let output = lastFrame();
+      expect(output).toContain('not fully merged');
+      expect(output).toContain('Force delete?');
+
+      // Accept force delete (mock will succeed this time)
+      mockGitManager.deleteBranch.mockResolvedValueOnce(undefined);
+      stdin.write('y');
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Success message should be shown in StatusBar
+      output = lastFrame();
+      expect(output).not.toContain('not fully merged');
+      expect(output).toContain('Force deleted branch');
+    });
   });
 
   describe('Search Workflow', () => {
     it('should filter branches with normal search', async () => {
-      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -293,7 +367,7 @@ describe('GitBranchUI - Integration Tests', () => {
     });
 
     it('should filter branches with regex search', async () => {
-      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -314,7 +388,7 @@ describe('GitBranchUI - Integration Tests', () => {
     });
 
     it('should clear search with Escape', async () => {
-      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -337,7 +411,7 @@ describe('GitBranchUI - Integration Tests', () => {
 
   describe('Help System', () => {
     it('should toggle help screen', async () => {
-      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -350,7 +424,7 @@ describe('GitBranchUI - Integration Tests', () => {
     });
 
     it('should close help with h key', async () => {
-      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -369,7 +443,7 @@ describe('GitBranchUI - Integration Tests', () => {
 
   describe('Navigation', () => {
     it('should navigate with j/k keys', async () => {
-      const { stdin } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { stdin } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -381,7 +455,7 @@ describe('GitBranchUI - Integration Tests', () => {
     });
 
     it('should navigate with arrow keys', async () => {
-      const { stdin } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { stdin } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -395,7 +469,7 @@ describe('GitBranchUI - Integration Tests', () => {
 
   describe('UI Component Integration', () => {
     it('should display all UI components together', async () => {
-      const { lastFrame } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { lastFrame } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -407,7 +481,7 @@ describe('GitBranchUI - Integration Tests', () => {
     });
 
     it('should coordinate state across components', async () => {
-      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager} />);
+      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 

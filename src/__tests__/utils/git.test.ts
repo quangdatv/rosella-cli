@@ -1,12 +1,12 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import type { BranchSummary } from 'simple-git';
+import type { BranchSummary, StatusResult } from 'simple-git';
 
 // Mock the simple-git module
 const mockGit = {
   branch: vi.fn<(args?: string[]) => Promise<BranchSummary | void>>(),
   branchLocal: vi.fn<() => Promise<BranchSummary>>(),
   checkout: vi.fn<(branchName: string) => Promise<void>>(),
-  status: vi.fn<() => Promise<any>>(),
+  status: vi.fn<() => Promise<StatusResult>>(),
   deleteLocalBranch: vi.fn<(branchName: string, force?: boolean) => Promise<void>>(),
 };
 
@@ -16,7 +16,7 @@ vi.mock('simple-git', () => ({
   simpleGit: mockSimpleGit,
 }));
 
-const { GitManager, validateBranchName } = await import('../../utils/git.js');
+const { GitManager } = await import('../../utils/git.js');
 
 describe('GitManager', () => {
   let gitManager: InstanceType<typeof GitManager>;
@@ -144,7 +144,22 @@ describe('GitManager', () => {
 
   describe('isGitRepository', () => {
     it('should return true when in a git repository', async () => {
-      mockGit.status.mockResolvedValue({});
+      mockGit.status.mockResolvedValue({
+        not_added: [],
+        conflicted: [],
+        created: [],
+        deleted: [],
+        modified: [],
+        renamed: [],
+        files: [],
+        staged: [],
+        ahead: 0,
+        behind: 0,
+        current: 'main',
+        tracking: null,
+        detached: false,
+        isClean: () => true,
+      } as StatusResult);
 
       const result = await gitManager.isGitRepository();
 

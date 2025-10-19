@@ -28,6 +28,7 @@ export const PromptBar: React.FC<Props> = ({ text, mode }) => {
   // Key listen mode - shows text without cursor, typically for yes/no prompts
   const padToWidth = (str: string): string => {
     // Remove ANSI codes to calculate actual visible length
+    // eslint-disable-next-line no-control-regex
     const visibleLength = str.replace(/\u001b\[[0-9;]*m/g, '').length;
     const padding = Math.max(0, width - visibleLength);
     return str + ' '.repeat(padding);
