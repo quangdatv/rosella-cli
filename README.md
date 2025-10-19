@@ -12,8 +12,6 @@ An interactive git branch management CLI tool inspired by `git branch` and JetBr
 
 ## Installation
 
-### Development Setup
-
 ```bash
 # Clone the repository
 git clone <repository-url>
@@ -22,25 +20,9 @@ cd rosella-cli
 # Install dependencies
 yarn install
 
-# Install Yarn SDK for VSCode (required for proper TypeScript support)
-yarn dlx @yarnpkg/sdks vscode
-
 # Build the project
 yarn build
-
-# Run the CLI
-yarn rosella
 ```
-
-### VSCode Setup
-
-After running `yarn dlx @yarnpkg/sdks vscode`, you need to configure VSCode to use the workspace TypeScript version:
-
-1. Open Command Palette: `Cmd+Shift+P` (Mac) or `Ctrl+Shift+P` (Windows/Linux)
-2. Type: `TypeScript: Select TypeScript Version`
-3. Select: `Use Workspace Version`
-
-This ensures VSCode properly resolves modules with Yarn PnP.
 
 ## Usage
 
@@ -50,69 +32,31 @@ Simply run `rosella` in any git repository:
 rosella
 ```
 
-### Keyboard Shortcuts
+### Navigation
 
-- **↑/↓** or **j/k**: Navigate through branches
-- **Enter**: Checkout selected branch
-- **/**: Enter search mode (normal string matching)
-- **:**: Enter regex search mode
-- **Esc** or **q**: Quit the application
-- **Backspace**: Delete character in search mode
+- **↑/↓** or **j/k** - Navigate up/down
+- **Enter** - Checkout selected branch
 
-### Search Modes
+### Branch Actions
 
-#### Normal Search (`/`)
-Type `/` followed by your search query to filter branches by name (case-insensitive):
-```
-/feature
-```
+- **n** - Create new branch from current
+- **Delete** - Safe delete branch (git branch -d)
+- **Shift+Del** - Force delete branch (git branch -D)
 
-#### Regex Search (`:`)
-Type `:` followed by a regex pattern for advanced filtering:
-```
-:^feature/.*-\d+$
-```
+### Search
+
+- **/** - Start search (fuzzy match)
+- **:** - Start regex search
+- **Esc** - Clear search
+
+### Other
+
+- **h** - Toggle help
+- **q** - Quit
 
 ## Development
 
-### Build
-
-```bash
-yarn build
-```
-
-### Watch Mode
-
-```bash
-yarn dev
-```
-
-### Project Structure
-
-```
-rosella-cli/
-├── src/
-│   ├── components/      # React components (Ink UI)
-│   │   └── BranchSelector.tsx
-│   ├── types/          # TypeScript type definitions
-│   │   └── index.ts
-│   ├── utils/          # Utility functions
-│   │   └── git.ts      # Git operations
-│   └── index.tsx       # Entry point
-├── dist/               # Compiled JavaScript
-├── .yarn/
-│   └── sdks/           # Yarn SDK for IDE support
-├── package.json
-├── tsconfig.json
-└── README.md
-```
-
-## Technologies
-
-- **TypeScript**: Type-safe development
-- **Ink**: React-based terminal UI framework
-- **simple-git**: Git operations
-- **Yarn**: Package manager with Plug'n'Play
+For detailed development setup and build instructions, see [AGENTS.md](AGENTS.md).
 
 ## License
 
