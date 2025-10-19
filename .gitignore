@@ -141,8 +141,7 @@ Thumbs.db:encryptable
 ehthumbs.db
 Desktop.ini
 
-# yarn v3
-.pnp.*
+# yarn v4
 .yarn/*
 
 # Vite logs files

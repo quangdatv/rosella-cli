@@ -2032,6 +2032,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"entities@npm:^7.0.0":
+  version: 7.0.0
+  resolution: "entities@npm:7.0.0"
+  checksum: 10c0/4e7cc40cd00b64adede81780fd85c0bd0a905e863b5ef0b01718028ffbc113886c281deb57e1ce0e13a6e349a2d404ff383c876673b81d6dc56e87bf3e5a022a
+  languageName: node
+  linkType: hard
+
 "env-paths@npm:^2.2.0":
   version: 2.2.1
   resolution: "env-paths@npm:2.2.1"
@@ -4055,7 +4062,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"postcss@npm:^8.5.6":
+"postcss@npm:*, postcss@npm:^8.5.6":
   version: 8.5.6
   resolution: "postcss@npm:8.5.6"
   dependencies:
@@ -4369,12 +4376,15 @@ __metadata:
     "@types/react-dom": "npm:^19.2.2"
     "@vitest/ui": "npm:^3.2.4"
     chalk: "npm:^5.6.2"
+    entities: "npm:^7.0.0"
     eslint: "npm:^9.38.0"
     eslint-plugin-react: "npm:^7.37.5"
     eslint-plugin-react-hooks: "npm:^7.0.0"
     ink: "npm:^6.3.1"
     ink-testing-library: "npm:^4.0.0"
     jsdom: "npm:^27.0.1"
+    parse5: "npm:^8.0.0"
+    postcss: "npm:^8.5.6"
     react: "npm:^19.2.0"
     react-dom: "npm:^19.2.0"
     simple-git: "npm:^3.28.0"
