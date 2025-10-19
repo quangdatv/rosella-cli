@@ -8,7 +8,7 @@ describe('Help', () => {
       const { lastFrame } = render(<Help />);
 
       const output = lastFrame();
-      expect(output).toContain('rosella - Help');
+      expect(output).toContain('Rosella - Help');
     });
   });
 

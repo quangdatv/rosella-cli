@@ -116,4 +116,15 @@ export class GitManager {
       return false;
     }
   }
+
+  async getGitVersion(): Promise<string> {
+    try {
+      const result = await this.git.raw(['--version']);
+      // Extract version from output like "git version 2.39.2"
+      return result.trim();
+    } catch (error) {
+      // Return a fallback if git version can't be determined
+      return 'git version unknown';
+    }
+  }
 }

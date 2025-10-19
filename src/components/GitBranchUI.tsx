@@ -7,6 +7,7 @@ import { BranchList } from './BranchList.js';
 import { StatusBar } from './StatusBar.js';
 import { PromptBar } from './PromptBar.js';
 import { Header } from './Header.js';
+import { APP_VERSION } from '../utils/app-info.js';
 
 interface Props {
   gitManager: GitManager;
@@ -23,6 +24,7 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [gitVersion, setGitVersion] = useState<string>('loading...');
   const [search, setSearch] = useState<SearchState>({
     active: false,
     query: '',
@@ -104,6 +106,12 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
 
   useEffect(() => {
     loadBranches();
+    // Fetch git version
+    gitManager.getGitVersion().then((version) => {
+      setGitVersion(version);
+    }).catch(() => {
+      setGitVersion('git version unknown');
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -559,7 +567,6 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
 
   // Main branch list view
   const viewportHeight = getViewportHeight();
-  const version = '1.0.0'; // TODO: Get from package.json
   const cwd = process.cwd();
 
   // Determine prompt bar content and mode
@@ -615,7 +622,7 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
 
   return (
     <Box flexDirection="column">
-      <Header version={version} cwd={cwd} />
+      <Header version={APP_VERSION} gitVersion={gitVersion} cwd={cwd} />
 
       <BranchList
         branches={filteredBranches}

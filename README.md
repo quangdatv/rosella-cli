@@ -13,15 +13,7 @@ An interactive git branch management CLI tool inspired by `git branch` and JetBr
 ## Installation
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd rosella-cli
-
-# Install dependencies
-yarn install
-
-# Build the project
-yarn build
+npm install -g rosella-cli
 ```
 
 ## Usage

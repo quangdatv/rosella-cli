@@ -1,11 +1,12 @@
 import React from 'react';
 import { Box, Text } from 'ink';
+import { APP_DISPLAY_NAME } from '../utils/app-info.js';
 
 export const Help: React.FC = () => {
   return (
     <Box flexDirection="column">
       <Box>
-        <Text bold color="cyan">rosella - Help</Text>
+        <Text bold color="cyan">{APP_DISPLAY_NAME} - Help</Text>
       </Box>
 
       <Box flexDirection="column">

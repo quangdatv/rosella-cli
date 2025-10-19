@@ -25,6 +25,7 @@ describe('GitBranchUI - Integration Tests', () => {
     isGitRepository: ReturnType<typeof vi.fn>;
     createBranch: ReturnType<typeof vi.fn>;
     deleteBranch: ReturnType<typeof vi.fn>;
+    getGitVersion: ReturnType<typeof vi.fn>;
   };
   let mockBranches: BranchInfo[];
 
@@ -58,6 +59,7 @@ describe('GitBranchUI - Integration Tests', () => {
       isGitRepository: vi.fn().mockResolvedValue(true),
       createBranch: vi.fn().mockResolvedValue(undefined),
       deleteBranch: vi.fn().mockResolvedValue(undefined),
+      getGitVersion: vi.fn().mockResolvedValue('git version 2.39.2'),
     };
   });
 
