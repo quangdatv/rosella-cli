@@ -25,10 +25,21 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'yarn'
-          cache-dependency-path: yarn.lock
+
+      - name: Cache Yarn local cache
+        uses: actions/cache@v4
+        with:
+          path: .yarn/cache
+          key: yarn-local-cache-${{ runner.os }}-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            yarn-local-cache-${{ runner.os }}-
 
       - name: Install dependencies
-        run: yarn install --immutable --inline-builds
+        shell: bash
+        run: |
+          corepack enable yarn
+          yarn -v
+          yarn install --immutable
 
       - name: Run linter
         run: yarn lint
