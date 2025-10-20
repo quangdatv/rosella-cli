@@ -1,5 +1,8 @@
 # Rosella CLI
 
+[![npm version](https://img.shields.io/npm/v/rosella-cli.svg)](https://www.npmjs.com/package/rosella-cli)
+[![npm license](https://img.shields.io/npm/l/rosella-cli.svg)](https://www.npmjs.com/package/rosella-cli)
+
 An interactive git branch management CLI tool inspired by `git branch` and JetBrains IDE git tools.
 
 ## Features
