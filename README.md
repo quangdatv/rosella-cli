@@ -13,15 +13,7 @@ An interactive git branch management CLI tool inspired by `git branch` and JetBr
 ## Installation
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd rosella-cli
-
-# Install dependencies
-yarn install
-
-# Build the project
-yarn build
+npm install -g rosella-cli
 ```
 
 ## Usage
@@ -40,8 +32,16 @@ rosella
 ### Branch Actions
 
 - **n** - Create new branch from current
-- **Delete** - Safe delete branch (git branch -d)
-- **Shift+Del** - Force delete branch (git branch -D)
+- **Delete** - Delete branch
+
+### Git Operations
+
+- **f** - Fetch from remote
+- **u** - Pull latest changes (on current branch)
+- **p** - Push to remote (on current branch)
+- **m** - Merge selected branch into current
+- **r** - Rebase current branch onto selected
+
 
 ### Search
 

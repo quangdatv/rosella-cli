@@ -8,7 +8,7 @@ describe('Help', () => {
       const { lastFrame } = render(<Help />);
 
       const output = lastFrame();
-      expect(output).toContain('rosella - Help');
+      expect(output).toContain('Rosella - Help');
     });
   });
 
@@ -65,17 +65,7 @@ describe('Help', () => {
 
       const output = lastFrame();
       expect(output).toContain('Delete');
-      expect(output).toContain('Safe delete branch');
-      expect(output).toContain('git branch -d');
-    });
-
-    it('should list force delete branch command', () => {
-      const { lastFrame } = render(<Help />);
-
-      const output = lastFrame();
-      expect(output).toContain('Shift+Del');
-      expect(output).toContain('Force delete branch');
-      expect(output).toContain('git branch -D');
+      expect(output).toContain('Delete branch');
     });
   });
 
@@ -155,6 +145,7 @@ describe('Help', () => {
       // Verify all major sections are present
       expect(output).toContain('Navigation');
       expect(output).toContain('Branch Actions');
+      expect(output).toContain('Git Operations');
       expect(output).toContain('Search');
       expect(output).toContain('Other');
     });
@@ -172,7 +163,8 @@ describe('Help', () => {
 
       const output = lastFrame();
       const shortcuts = [
-        '↑/↓', 'j/k', 'Enter', 'n', 'Delete', 'Shift+Del',
+        '↑/↓', 'j/k', 'Enter', 'n', 'Delete',
+        'f', 'u', 'p', 'm', 'r',
         '/', ':', 'Esc', 'h', 'q'
       ];
 

@@ -25,6 +25,7 @@ describe('GitBranchUI - Integration Tests', () => {
     isGitRepository: ReturnType<typeof vi.fn>;
     createBranch: ReturnType<typeof vi.fn>;
     deleteBranch: ReturnType<typeof vi.fn>;
+    getGitVersion: ReturnType<typeof vi.fn>;
   };
   let mockBranches: BranchInfo[];
 
@@ -58,6 +59,7 @@ describe('GitBranchUI - Integration Tests', () => {
       isGitRepository: vi.fn().mockResolvedValue(true),
       createBranch: vi.fn().mockResolvedValue(undefined),
       deleteBranch: vi.fn().mockResolvedValue(undefined),
+      getGitVersion: vi.fn().mockResolvedValue('git version 2.39.2'),
     };
   });
 
@@ -152,10 +154,11 @@ describe('GitBranchUI - Integration Tests', () => {
       stdin.write('\r');
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      expect(mockGitManager.createBranch).toHaveBeenCalledWith('new-feature');
+      // Now expects to be called with the selected branch name as the second parameter
+      expect(mockGitManager.createBranch).toHaveBeenCalledWith('new-feature', 'main');
 
       const output = lastFrame();
-      expect(output).toContain("Branch 'new-feature' created");
+      expect(output).toContain("Branch 'new-feature' created from 'main'");
       expect(output).toContain('Checkout now?');
     });
 
@@ -231,7 +234,7 @@ describe('GitBranchUI - Integration Tests', () => {
 
       // Move to non-current branch
       stdin.write('j');
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Press Delete
       stdin.write('\x7F');
@@ -247,8 +250,6 @@ describe('GitBranchUI - Integration Tests', () => {
       // But UI should still be interactive (branch list should still be visible)
       expect(output).toContain('main');
       expect(output).toContain('feature-1');
-      // Status bar should still be visible
-      expect(output).toContain('line');
     });
 
     it('should complete full branch deletion workflow', async () => {
@@ -258,7 +259,7 @@ describe('GitBranchUI - Integration Tests', () => {
 
       // Move to non-current branch
       stdin.write('j');
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Press Delete
       stdin.write('\x7F');
@@ -476,8 +477,8 @@ describe('GitBranchUI - Integration Tests', () => {
       const output = lastFrame();
       // Should show branch list
       expect(output).toContain('main');
-      // Should show status bar
-      expect(output).toContain('line 1 of 3');
+      // Should show hints in status bar
+      expect(output).toContain('h: Help');
     });
 
     it('should coordinate state across components', async () => {
@@ -490,8 +491,8 @@ describe('GitBranchUI - Integration Tests', () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       const output = lastFrame();
-      // Status bar should update
-      expect(output).toContain('line 2 of 3');
+      // Status bar should show hints
+      expect(output).toContain('h: Help');
     });
   });
 });

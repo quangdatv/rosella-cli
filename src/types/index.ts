@@ -3,6 +3,8 @@ export interface BranchInfo {
   current: boolean;
   commit: string;
   label?: string;
+  behindRemote?: number;
+  hasUncommittedChanges?: boolean;
 }
 
 export interface SearchState {

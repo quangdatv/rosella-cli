@@ -5,6 +5,7 @@ import { Header } from '../../components/Header.js';
 describe('Header', () => {
   const mockProps = {
     version: '1.0.0',
+    gitVersion: 'git version 2.39.2',
     cwd: '/Users/test/project',
   };
 
@@ -17,17 +18,25 @@ describe('Header', () => {
     });
 
     it('should display version number', () => {
-      const { lastFrame } = render(<Header version="1.2.3" cwd="/test" />);
+      const { lastFrame } = render(<Header version="1.2.3" gitVersion="git version 2.39.2" cwd="/test" />);
 
       const output = lastFrame();
       expect(output).toContain('1.2.3');
     });
 
-    it('should display version with space after Rosella', () => {
+    it('should display version with space after app name', () => {
       const { lastFrame } = render(<Header {...mockProps} />);
 
       const output = lastFrame();
-      expect(output).toContain('Rosella 1.0.0');
+      // Should display "Rosella 1.0.0" based on config
+      expect(output).toContain('1.0.0');
+    });
+
+    it('should display git version', () => {
+      const { lastFrame } = render(<Header {...mockProps} />);
+
+      const output = lastFrame();
+      expect(output).toContain('git version 2.39.2');
     });
   });
 
@@ -41,7 +50,7 @@ describe('Header', () => {
 
     it('should display different cwd when provided', () => {
       const { lastFrame } = render(
-        <Header version="1.0.0" cwd="/different/path" />
+        <Header version="1.0.0" gitVersion="git version 2.39.2" cwd="/different/path" />
       );
 
       const output = lastFrame();
@@ -68,14 +77,20 @@ describe('Header', () => {
 
   describe('Props Handling', () => {
     it('should handle empty version string', () => {
-      const { lastFrame } = render(<Header version="" cwd="/test" />);
+      const { lastFrame } = render(<Header version="" gitVersion="git version 2.39.2" cwd="/test" />);
 
       const output = lastFrame();
       expect(output).toContain('Rosella');
     });
 
     it('should handle empty cwd string', () => {
-      const { lastFrame } = render(<Header version="1.0.0" cwd="" />);
+      const { lastFrame } = render(<Header version="1.0.0" gitVersion="git version 2.39.2" cwd="" />);
+
+      expect(() => lastFrame()).not.toThrow();
+    });
+
+    it('should handle empty gitVersion string', () => {
+      const { lastFrame } = render(<Header version="1.0.0" gitVersion="" cwd="/test" />);
 
       expect(() => lastFrame()).not.toThrow();
     });

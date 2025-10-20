@@ -7,9 +7,60 @@ import { BranchList } from './BranchList.js';
 import { StatusBar } from './StatusBar.js';
 import { PromptBar } from './PromptBar.js';
 import { Header } from './Header.js';
+import { ErrorPane } from './ErrorPane.js';
+import { APP_VERSION } from '../utils/app-info.js';
 
 interface Props {
   gitManager: GitManager;
+}
+
+// UI overhead constants for viewport height calculation
+const UI_OVERHEAD = {
+  HEADER: 2,
+  PROMPT_BAR: 1,
+  STATUS_BAR: 2,
+  BORDERS: 2,
+} as const;
+
+const TOTAL_UI_OVERHEAD = Object.values(UI_OVERHEAD).reduce((a, b) => a + b, 0);
+
+// Helper function to provide user-friendly error messages
+function parseGitError(error: unknown, operation: string): string {
+  const errorMessage = error instanceof Error ? error.message : `${operation} failed`;
+
+  // Network errors
+  if (errorMessage.includes('Could not resolve host') ||
+      errorMessage.includes('network') ||
+      errorMessage.includes('Connection') ||
+      errorMessage.includes('timeout')) {
+    return `Network error: Unable to connect to remote.\nPlease check your internet connection and try again.`;
+  }
+
+  // Authentication errors
+  if (errorMessage.includes('Authentication failed') ||
+      errorMessage.includes('Permission denied') ||
+      errorMessage.includes('fatal: could not read')) {
+    return `Authentication error: Failed to authenticate with remote.\nPlease check your credentials and try again.`;
+  }
+
+  // Merge conflicts
+  if (errorMessage.includes('CONFLICT') || errorMessage.includes('conflict')) {
+    return `Merge conflict detected:\n${errorMessage}\n\nResolve conflicts manually and try again.`;
+  }
+
+  // Diverged branches
+  if (errorMessage.includes('diverged') || errorMessage.includes('non-fast-forward')) {
+    return `Branches have diverged.\nPull the latest changes or force push (use with caution).`;
+  }
+
+  // Uncommitted changes blocking operation
+  if (errorMessage.includes('would be overwritten') ||
+      errorMessage.includes('Please commit your changes')) {
+    return `Uncommitted changes detected.\nCommit or stash your changes before proceeding.`;
+  }
+
+  // Return original error if no specific case matched
+  return errorMessage;
 }
 
 export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
@@ -23,11 +74,14 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [gitVersion, setGitVersion] = useState<string>('loading...');
+  const loadRequestIdRef = React.useRef<number>(0); // Track request IDs to prevent race conditions
   const [search, setSearch] = useState<SearchState>({
     active: false,
     query: '',
     mode: 'normal',
   });
+  const [searchValidationError, setSearchValidationError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<{
     active: boolean;
     branchName: string;
@@ -39,6 +93,7 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
   const [creation, setCreation] = useState<{
     active: boolean;
     branchName: string;
+    fromBranch?: string;
     validationError?: string;
   }>({ active: false, branchName: '' });
   const [checkoutPrompt, setCheckoutPrompt] = useState<{
@@ -46,20 +101,42 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
     branchName: string;
   } | null>(null);
   const [savedSelectionIndex, setSavedSelectionIndex] = useState<number>(0);
+  const [mergePrompt, setMergePrompt] = useState<{
+    active: boolean;
+    branchName: string;
+  } | null>(null);
+  const [rebasePrompt, setRebasePrompt] = useState<{
+    active: boolean;
+    branchName: string;
+  } | null>(null);
+  const [pushPrompt, setPushPrompt] = useState<{
+    active: boolean;
+    needsUpstream: boolean;
+  } | null>(null);
+  const [operationInProgress, setOperationInProgress] = useState<string | null>(null);
+  const [showErrorPane, setShowErrorPane] = useState(false);
 
   // Calculate viewport size - use full terminal height like vim
-  // Account for: header (2), prompt bar (1), status bar (1), borders (2)
   const getViewportHeight = () => {
     const terminalHeight = stdout?.rows || 24;
-    const uiOverhead = 6; // Header (2 lines) + PromptBar + StatusBar + TopBorder + BottomBorder
     // Return content area height (excluding borders which are rendered by the Box component)
-    return Math.max(1, terminalHeight - uiOverhead);
+    return Math.max(1, terminalHeight - TOTAL_UI_OVERHEAD);
   };
 
   const loadBranches = async () => {
+    // Increment request ID to track this specific request
+    loadRequestIdRef.current += 1;
+    const currentRequestId = loadRequestIdRef.current;
+
     try {
       setLoading(true);
       const isRepo = await gitManager.isGitRepository();
+
+      // Check if this request is still the latest
+      if (currentRequestId !== loadRequestIdRef.current) {
+        return; // Abort if a newer request was started
+      }
+
       if (!isRepo) {
         setError('Not a git repository');
         setLoading(false);
@@ -67,18 +144,28 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
       }
 
       const branchList = await gitManager.getBranches();
+
+      // Check again before updating state
+      if (currentRequestId !== loadRequestIdRef.current) {
+        return; // Abort if a newer request was started
+      }
+
       setBranches(branchList);
       setFilteredBranches(branchList);
       setLoading(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-      setLoading(false);
+      // Only update error if this is still the latest request
+      if (currentRequestId === loadRequestIdRef.current) {
+        setError(err instanceof Error ? err.message : 'Unknown error');
+        setLoading(false);
+      }
     }
   };
 
   const filterBranches = () => {
     if (!search.query) {
       setFilteredBranches(branches);
+      setSearchValidationError(null);
       return;
     }
 
@@ -87,16 +174,17 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
       try {
         const regex = new RegExp(search.query, 'i');
         filtered = branches.filter((b) => regex.test(b.name));
+        setSearchValidationError(null); // Clear error if regex is valid
       } catch {
-        // Invalid regex, fall back to normal search
-        filtered = branches.filter((b) =>
-          b.name.toLowerCase().includes(search.query.toLowerCase())
-        );
+        // Invalid regex - show error and display all branches
+        setSearchValidationError('Invalid regex pattern');
+        filtered = branches;
       }
     } else {
       filtered = branches.filter((b) =>
         b.name.toLowerCase().includes(search.query.toLowerCase())
       );
+      setSearchValidationError(null);
     }
 
     setFilteredBranches(filtered);
@@ -104,6 +192,12 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
 
   useEffect(() => {
     loadBranches();
+    // Fetch git version
+    gitManager.getGitVersion().then((version) => {
+      setGitVersion(version);
+    }).catch(() => {
+      setGitVersion('git version unknown');
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -111,6 +205,13 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
     filterBranches();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [branches, search.query, search.mode]);
+
+  // Check if error is multi-line and should trigger error pane
+  useEffect(() => {
+    if (error && error.includes('\n')) {
+      setShowErrorPane(true);
+    }
+  }, [error]);
 
   // Adjust selection when filtered branches change
   useEffect(() => {
@@ -246,7 +347,13 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
   const handleCreateRequest = () => {
     setSavedSelectionIndex(selectedIndex);
     setError(null);
-    setCreation({ active: true, branchName: '', validationError: undefined });
+    const selectedBranch = filteredBranches[selectedIndex];
+    setCreation({
+      active: true,
+      branchName: '',
+      fromBranch: selectedBranch?.name,
+      validationError: undefined
+    });
   };
 
   const handleConfirmCreate = async () => {
@@ -263,7 +370,7 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
     }
 
     try {
-      await gitManager.createBranch(branchName);
+      await gitManager.createBranch(branchName, creation.fromBranch);
 
       // Clear creation state
       setCreation({ active: false, branchName: '', validationError: undefined });
@@ -273,7 +380,8 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
 
       // Show success message in StatusBar
       setError(null);
-      setMessage(`Branch '${branchName}' created`);
+      const fromMsg = creation.fromBranch ? ` from '${creation.fromBranch}'` : '';
+      setMessage(`Branch '${branchName}' created${fromMsg}`);
 
       // Show checkout prompt in PromptBar
       setCheckoutPrompt({
@@ -339,6 +447,241 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
     setCreation({ active: false, branchName: '', validationError: undefined });
   };
 
+  const handleMergeRequest = () => {
+    if (filteredBranches.length === 0) return;
+
+    const selectedBranch = filteredBranches[selectedIndex];
+
+    // Can't merge the current branch into itself
+    if (selectedBranch.current) {
+      setError('Cannot merge current branch into itself');
+      return;
+    }
+
+    setError(null);
+    setMergePrompt({
+      active: true,
+      branchName: selectedBranch.name,
+    });
+  };
+
+  const handleConfirmMerge = async () => {
+    if (!mergePrompt) return;
+
+    const { branchName } = mergePrompt;
+
+    try {
+      setMergePrompt(null);
+      setOperationInProgress('Merging...');
+
+      await gitManager.merge(branchName);
+
+      setOperationInProgress(null);
+      await loadBranches();
+
+      setError(null);
+      setMessage(`✓ Merged '${branchName}' into current branch`);
+    } catch (err) {
+      setOperationInProgress(null);
+      setError(parseGitError(err, 'Merge'));
+    }
+  };
+
+  const handleCancelMerge = () => {
+    setMergePrompt(null);
+  };
+
+  const handleRebaseRequest = () => {
+    if (filteredBranches.length === 0) return;
+
+    const selectedBranch = filteredBranches[selectedIndex];
+
+    // Can't rebase on the current branch
+    if (selectedBranch.current) {
+      setError('Cannot rebase current branch onto itself');
+      return;
+    }
+
+    setError(null);
+    setRebasePrompt({
+      active: true,
+      branchName: selectedBranch.name,
+    });
+  };
+
+  const handleConfirmRebase = async () => {
+    if (!rebasePrompt) return;
+
+    const { branchName } = rebasePrompt;
+
+    try {
+      setRebasePrompt(null);
+      setOperationInProgress('Rebasing...');
+
+      await gitManager.rebase(branchName);
+
+      setOperationInProgress(null);
+      await loadBranches();
+
+      setError(null);
+      setMessage(`✓ Rebased onto '${branchName}'`);
+    } catch (err) {
+      setOperationInProgress(null);
+      setError(parseGitError(err, 'Rebase'));
+    }
+  };
+
+  const handleCancelRebase = () => {
+    setRebasePrompt(null);
+  };
+
+  const handlePullRequest = async () => {
+    if (filteredBranches.length === 0) return;
+
+    const selectedBranch = filteredBranches[selectedIndex];
+
+    // Can only pull on the current branch
+    if (!selectedBranch.current) {
+      setError('Can only pull on current branch');
+      return;
+    }
+
+    try {
+      setError(null);
+      setOperationInProgress('Pulling...');
+
+      await gitManager.pull();
+
+      setOperationInProgress(null);
+      await loadBranches();
+
+      setMessage(`✓ Pulled latest changes`);
+    } catch (err) {
+      setOperationInProgress(null);
+      setError(parseGitError(err, 'Pull'));
+    }
+  };
+
+  const handlePushRequest = async () => {
+    if (filteredBranches.length === 0) return;
+
+    const selectedBranch = filteredBranches[selectedIndex];
+
+    // Can only push on the current branch
+    if (!selectedBranch.current) {
+      setError('Can only push from current branch');
+      return;
+    }
+
+    try {
+      setError(null);
+      setOperationInProgress('Pushing...');
+
+      await gitManager.push();
+
+      setOperationInProgress(null);
+      await loadBranches();
+
+      setMessage(`✓ Pushed to remote`);
+    } catch (err) {
+      setOperationInProgress(null);
+
+      const errorMessage = err instanceof Error ? err.message : 'Push failed';
+
+      // Check if upstream needs to be set
+      if (errorMessage.includes('NO_UPSTREAM')) {
+        setPushPrompt({
+          active: true,
+          needsUpstream: true,
+        });
+      } else {
+        setError(parseGitError(err, 'Push'));
+      }
+    }
+  };
+
+  const handleConfirmPush = async () => {
+    if (!pushPrompt) return;
+
+    try {
+      setPushPrompt(null);
+      setOperationInProgress('Pushing...');
+
+      await gitManager.push(true); // Set upstream
+
+      setOperationInProgress(null);
+      await loadBranches();
+
+      setError(null);
+      setMessage(`✓ Pushed to remote with upstream set`);
+    } catch (err) {
+      setOperationInProgress(null);
+      setError(parseGitError(err, 'Push'));
+    }
+  };
+
+  const handleCancelPush = () => {
+    setPushPrompt(null);
+  };
+
+  const handleFetchRequest = async () => {
+    try {
+      setError(null);
+      setOperationInProgress('Fetching...');
+
+      await gitManager.fetch();
+
+      setOperationInProgress(null);
+      await loadBranches();
+
+      setMessage(`✓ Fetched from remote`);
+    } catch (err) {
+      setOperationInProgress(null);
+      setError(parseGitError(err, 'Fetch'));
+    }
+  };
+
+  // Generate context-aware hints for the status bar
+  const generateHints = (): string | null => {
+    // Don't show hints if in any modal/prompt mode
+    if (
+      search.active ||
+      creation.active ||
+      confirmation?.active ||
+      forceDeletePrompt?.active ||
+      checkoutPrompt?.active ||
+      mergePrompt?.active ||
+      rebasePrompt?.active ||
+      pushPrompt?.active ||
+      operationInProgress ||
+      showHelp
+    ) {
+      return null;
+    }
+
+    if (filteredBranches.length === 0) {
+      return 'f: Fetch | h: Help';
+    }
+
+    const selectedBranch = filteredBranches[selectedIndex];
+    const isActiveBranch = selectedBranch?.current;
+
+    // Global commands (always available)
+    const globalHints = 'f: Fetch';
+
+    // Branch-specific commands
+    let branchHints: string;
+    if (isActiveBranch) {
+      // Commands for active branch
+      branchHints = 'n: New Branch | u: Pull | p: Push';
+    } else {
+      // Commands for non-active branch
+      branchHints = 'Enter: Checkout | n: New Branch | Del: Delete | m: Merge | r: Rebase';
+    }
+
+    return `${globalHints} | ${branchHints} | h: Help`;
+  };
+
   // Helper function to calculate navigation indices
   // This batches the state updates to prevent screen flashing
   const calculateNavigation = (
@@ -378,6 +721,18 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
   };
 
   useInput((input, key) => {
+    // Handle error pane dismissal
+    if (showErrorPane) {
+      setShowErrorPane(false);
+      setError(null);
+      return;
+    }
+
+    // Disable input during operations
+    if (operationInProgress) {
+      return;
+    }
+
     // Handle checkout prompt mode
     if (checkoutPrompt?.active) {
       if (input === 'y' || input === 'Y') {
@@ -404,6 +759,36 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
         handleConfirmDelete(false); // Normal delete
       } else {
         handleCancelDelete(); // Cancel on any other key
+      }
+      return;
+    }
+
+    // Handle merge prompt mode
+    if (mergePrompt?.active) {
+      if (input === 'y' || input === 'Y') {
+        handleConfirmMerge();
+      } else {
+        handleCancelMerge();
+      }
+      return;
+    }
+
+    // Handle rebase prompt mode
+    if (rebasePrompt?.active) {
+      if (input === 'y' || input === 'Y') {
+        handleConfirmRebase();
+      } else {
+        handleCancelRebase();
+      }
+      return;
+    }
+
+    // Handle push prompt mode
+    if (pushPrompt?.active) {
+      if (input === 'y' || input === 'Y') {
+        handleConfirmPush();
+      } else {
+        handleCancelPush();
       }
       return;
     }
@@ -467,12 +852,15 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
     if (search.active) {
       if (key.escape) {
         setSearch({ active: false, query: '', mode: 'normal' });
+        setSearchValidationError(null);
       } else if (key.return) {
         setSearch((prev) => ({ ...prev, active: false }));
+        setSearchValidationError(null);
       } else if (key.backspace || key.delete) {
         setSearch((prev) => {
           // If query is already empty, exit search mode
           if (prev.query.length === 0) {
+            setSearchValidationError(null);
             return { active: false, query: '', mode: 'normal' };
           }
           // Otherwise, delete the last character
@@ -534,17 +922,41 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
       handleCheckout();
     } else if (input === '/') {
       setError(null);
+      setMessage(null);
       setSearch({ active: true, query: '', mode: 'normal' });
     } else if (input === ':') {
       setError(null);
+      setMessage(null);
       setSearch({ active: true, query: '', mode: 'regex' });
     } else if (input === 'h') {
+      setMessage(null);
       setShowHelp(true);
     } else if (input === 'n') {
+      setMessage(null);
       handleCreateRequest();
     } else if (key.delete) {
       // Delete - will prompt for normal or force delete
       handleDeleteRequest();
+    } else if (input === 'f') {
+      // Fetch - always available (global command)
+      setMessage(null);
+      handleFetchRequest();
+    } else if (input === 'm') {
+      // Merge - only available when non-active branch is selected
+      setMessage(null);
+      handleMergeRequest();
+    } else if (input === 'r') {
+      // Rebase - only available when non-active branch is selected
+      setMessage(null);
+      handleRebaseRequest();
+    } else if (input === 'u') {
+      // Pull - only available when active branch is selected
+      setMessage(null);
+      handlePullRequest();
+    } else if (input === 'p') {
+      // Push - only available when active branch is selected
+      setMessage(null);
+      handlePushRequest();
     }
   });
 
@@ -559,11 +971,17 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
 
   // Main branch list view
   const viewportHeight = getViewportHeight();
-  const version = '1.0.0'; // TODO: Get from package.json
   const cwd = process.cwd();
 
   // Determine prompt bar content and mode
   const getPromptBarProps = (): { text: string; mode: 'input' | 'keyListen' } => {
+    if (operationInProgress) {
+      return {
+        text: operationInProgress,
+        mode: 'keyListen',
+      };
+    }
+
     if (confirmation?.active) {
       return {
         text: `Delete branch '${confirmation.branchName}'? (y/n)`,
@@ -585,16 +1003,46 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
       };
     }
 
+    if (mergePrompt?.active) {
+      // Get current branch name
+      const currentBranch = branches.find((b) => b.current);
+      return {
+        text: `Merge '${mergePrompt.branchName}' into '${currentBranch?.name || 'current'}'? (y/n)`,
+        mode: 'keyListen',
+      };
+    }
+
+    if (rebasePrompt?.active) {
+      return {
+        text: `Rebase onto '${rebasePrompt.branchName}'? (y/n)`,
+        mode: 'keyListen',
+      };
+    }
+
+    if (pushPrompt?.active) {
+      return {
+        text: pushPrompt.needsUpstream
+          ? `No upstream branch set. Push and set upstream? (y/n)`
+          : `Push to remote? (y/n)`,
+        mode: 'keyListen',
+      };
+    }
+
     if (search.active) {
       const prefix = search.mode === 'regex' ? 'Regex search: ' : 'Fuzzy search: ';
+      const baseText = prefix + search.query;
+      const text = searchValidationError
+        ? `${baseText} - Error: ${searchValidationError}`
+        : baseText;
       return {
-        text: prefix + search.query,
+        text,
         mode: 'input',
       };
     }
 
     if (creation.active) {
-      const baseText = `New branch: ${creation.branchName}`;
+      const fromText = creation.fromBranch ? ` from '${creation.fromBranch}'` : '';
+      const baseText = `New branch${fromText}: ${creation.branchName}`;
       const text = creation.validationError
         ? `${baseText} - Error: ${creation.validationError}`
         : baseText;
@@ -613,9 +1061,16 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
 
   const promptBarProps = getPromptBarProps();
 
+  // Show error pane if multi-line error is present
+  if (showErrorPane && error) {
+    return (
+      <ErrorPane error={error} />
+    );
+  }
+
   return (
     <Box flexDirection="column">
-      <Header version={version} cwd={cwd} />
+      <Header version={APP_VERSION} gitVersion={gitVersion} cwd={cwd} />
 
       <BranchList
         branches={filteredBranches}
@@ -627,10 +1082,10 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
       <PromptBar {...promptBarProps} />
 
       <StatusBar
-        selectedIndex={selectedIndex}
         totalBranches={filteredBranches.length}
         message={message}
         error={error}
+        hints={generateHints()}
       />
     </Box>
   );
