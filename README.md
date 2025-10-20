@@ -32,8 +32,16 @@ rosella
 ### Branch Actions
 
 - **n** - Create new branch from current
-- **Delete** - Safe delete branch (git branch -d)
-- **Shift+Del** - Force delete branch (git branch -D)
+- **Delete** - Delete branch
+
+### Git Operations
+
+- **f** - Fetch from remote
+- **u** - Pull latest changes (on current branch)
+- **p** - Push to remote (on current branch)
+- **m** - Merge selected branch into current
+- **r** - Rebase current branch onto selected
+
 
 ### Search
 

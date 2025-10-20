@@ -8,6 +8,7 @@ const mockGit = {
   checkout: vi.fn<(branchName: string) => Promise<void>>(),
   status: vi.fn<() => Promise<StatusResult>>(),
   deleteLocalBranch: vi.fn<(branchName: string, force?: boolean) => Promise<void>>(),
+  raw: vi.fn<(args: string[]) => Promise<string>>(),
 };
 
 const mockSimpleGit = vi.fn(() => mockGit);
@@ -28,83 +29,66 @@ describe('GitManager', () => {
 
   describe('getBranches', () => {
     it('should return list of local branches', async () => {
-      const mockBranchSummary: BranchSummary = {
-        all: ['main', 'feature-1', 'feature-2'],
-        branches: {
-          'main': {
-            current: true,
-            name: 'main',
-            commit: 'abc123',
-            label: 'main',
-            linkedWorkTree: false,
-          },
-          'feature-1': {
-            current: false,
-            name: 'feature-1',
-            commit: 'def456',
-            label: 'feature-1',
-            linkedWorkTree: false,
-          },
-          'feature-2': {
-            current: false,
-            name: 'feature-2',
-            commit: 'ghi789',
-            label: 'feature-2',
-            linkedWorkTree: false,
-          },
-        },
+      const mockStatus: StatusResult = {
+        not_added: [],
+        conflicted: [],
+        created: [],
+        deleted: [],
+        modified: [],
+        renamed: [],
+        files: [],
+        staged: [],
+        ahead: 0,
+        behind: 0,
         current: 'main',
+        tracking: null,
         detached: false,
-      };
+        isClean: () => true,
+      } as StatusResult;
 
-      mockGit.branchLocal.mockResolvedValue(mockBranchSummary);
+      // Mock git for-each-ref output: format is "refname|commit|HEAD|tracking"
+      const mockForEachRefOutput = 'main|abc123|*|\nfeature-1|def456||\nfeature-2|ghi789||';
+
+      mockGit.status.mockResolvedValue(mockStatus);
+      mockGit.raw.mockResolvedValue(mockForEachRefOutput);
 
       const branches = await gitManager.getBranches();
 
       expect(branches).toHaveLength(3);
       expect(branches[0].name).toBe('main');
       expect(branches[0].current).toBe(true);
-      expect(mockGit.branchLocal).toHaveBeenCalledTimes(1);
+      expect(branches[0].hasUncommittedChanges).toBe(false);
+      expect(mockGit.status).toHaveBeenCalledTimes(1);
+      expect(mockGit.raw).toHaveBeenCalledWith([
+        'for-each-ref',
+        '--format=%(refname:short)|%(objectname:short)|%(HEAD)|%(upstream:track)',
+        'refs/heads/',
+      ]);
     });
 
     it('should sort branches with current first, then main/master, then alphabetically', async () => {
-      const mockBranchSummary: BranchSummary = {
-        all: ['feature-b', 'main', 'feature-a', 'dev'],
-        branches: {
-          'feature-b': {
-            current: false,
-            name: 'feature-b',
-            commit: 'def456',
-            label: 'feature-b',
-            linkedWorkTree: false,
-          },
-          'main': {
-            current: false,
-            name: 'main',
-            commit: 'abc123',
-            label: 'main',
-            linkedWorkTree: false,
-          },
-          'feature-a': {
-            current: false,
-            name: 'feature-a',
-            commit: 'ghi789',
-            label: 'feature-a',
-            linkedWorkTree: false,
-          },
-          'dev': {
-            current: true,
-            name: 'dev',
-            commit: 'jkl012',
-            label: 'dev',
-            linkedWorkTree: false,
-          },
-        },
+      const mockStatus: StatusResult = {
+        not_added: [],
+        conflicted: [],
+        created: [],
+        deleted: [],
+        modified: [],
+        renamed: [],
+        files: [],
+        staged: [],
+        ahead: 0,
+        behind: 0,
         current: 'dev',
+        tracking: null,
         detached: false,
-      };
+        isClean: () => true,
+      } as StatusResult;
 
-      mockGit.branchLocal.mockResolvedValue(mockBranchSummary);
+      // Mock git for-each-ref output: format is "refname|commit|HEAD|tracking"
+      const mockForEachRefOutput = 'feature-b|def456||\nmain|abc123||\nfeature-a|ghi789||\ndev|jkl012|*|';
+
+      mockGit.status.mockResolvedValue(mockStatus);
+      mockGit.raw.mockResolvedValue(mockForEachRefOutput);
 
       const branches = await gitManager.getBranches();
 
@@ -114,8 +98,74 @@ describe('GitManager', () => {
       expect(branches[3].name).toBe('feature-b');
     });
 
-    it('should throw error when git.branch fails', async () => {
-      mockGit.branchLocal.mockRejectedValue(new Error('Git error'));
+    it('should detect branches behind remote', async () => {
+      const mockStatus: StatusResult = {
+        not_added: [],
+        conflicted: [],
+        created: [],
+        deleted: [],
+        modified: [],
+        renamed: [],
+        files: [],
+        staged: [],
+        ahead: 0,
+        behind: 0,
+        current: 'main',
+        tracking: null,
+        detached: false,
+        isClean: () => true,
+      } as StatusResult;
+
+      // Mock git for-each-ref output with tracking info
+      // Format is "refname|commit|HEAD|tracking"
+      // Tracking shows "[behind 3]" for main
+      const mockForEachRefOutput = 'main|abc123|*|[behind 3]\nfeature-1|def456||';
+
+      mockGit.status.mockResolvedValue(mockStatus);
+      mockGit.raw.mockResolvedValue(mockForEachRefOutput);
+
+      const branches = await gitManager.getBranches();
+
+      expect(branches[0].name).toBe('main');
+      expect(branches[0].behindRemote).toBe(3);
+      expect(branches[1].name).toBe('feature-1');
+      expect(branches[1].behindRemote).toBeUndefined();
+    });
+
+    it('should detect uncommitted changes on current branch', async () => {
+      const mockStatus: StatusResult = {
+        not_added: ['new-file.txt'],
+        conflicted: [],
+        created: ['another-file.txt'],
+        deleted: [],
+        modified: ['existing-file.txt'],
+        renamed: [],
+        files: [],
+        staged: [],
+        ahead: 0,
+        behind: 0,
+        current: 'main',
+        tracking: null,
+        detached: false,
+        isClean: () => false,
+      } as StatusResult;
+
+      // Mock git for-each-ref output
+      const mockForEachRefOutput = 'main|abc123|*|';
+
+      mockGit.status.mockResolvedValue(mockStatus);
+      mockGit.raw.mockResolvedValue(mockForEachRefOutput);
+
+      const branches = await gitManager.getBranches();
+
+      expect(branches[0].name).toBe('main');
+      expect(branches[0].current).toBe(true);
+      expect(branches[0].hasUncommittedChanges).toBe(true);
+    });
+
+    it('should throw error when git operation fails', async () => {
+      mockGit.status.mockRejectedValue(new Error('Git error'));
+      mockGit.raw.mockResolvedValue('');
 
       await expect(gitManager.getBranches()).rejects.toThrow(
         'Failed to fetch branches'

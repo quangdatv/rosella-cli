@@ -27,17 +27,38 @@ export const BranchList: React.FC<Props> = ({
             const actualIndex = topIndex + viewportIndex;
             const isSelected = actualIndex === selectedIndex;
 
+            // Build the branch indicator prefix
+            let branchPrefix = '';
+            if (branch.current) {
+              branchPrefix = branch.hasUncommittedChanges ? '* ● ' : '* ';
+            } else {
+              branchPrefix = '  ';
+            }
+
+            // Add arrow icon for branches behind remote
+            const behindIcon = branch.behindRemote ? '↙ ' : '';
+
             return (
               <Box key={branch.name}>
                 {isSelected ? (
                   <Text inverse>
-                    {branch.current ? '* ' : '  '}
+                    {branch.current ? (
+                      <Text color={branch.hasUncommittedChanges ? 'yellow' : 'green'}>{branchPrefix}</Text>
+                    ) : (
+                      branchPrefix
+                    )}
+                    {behindIcon}
                     {branch.name}
                     <Text dimColor> ({branch.commit.substring(0, 7)})</Text>
                   </Text>
                 ) : (
                   <Text>
-                    {branch.current ? <Text color="green">* </Text> : '  '}
+                    {branch.current ? (
+                      <Text color={branch.hasUncommittedChanges ? 'yellow' : 'green'}>{branchPrefix}</Text>
+                    ) : (
+                      branchPrefix
+                    )}
+                    {behindIcon}
                     {branch.name}
                     <Text dimColor> ({branch.commit.substring(0, 7)})</Text>
                   </Text>

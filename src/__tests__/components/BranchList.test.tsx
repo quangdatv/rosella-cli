@@ -297,4 +297,115 @@ describe('BranchList', () => {
       expect(output).toContain('abc');
     });
   });
+
+  describe('Branch Behind Remote Indicator', () => {
+    it('should show arrow icon for branches behind remote', () => {
+      const branchesWithBehind: BranchInfo[] = [
+        { name: 'main', current: true, commit: 'abc1234567', label: 'main', behindRemote: 3 },
+        { name: 'feature-1', current: false, commit: 'def4567890', label: 'feature-1', behindRemote: 1 },
+      ];
+
+      const { lastFrame } = render(
+        <BranchList
+          branches={branchesWithBehind}
+          selectedIndex={0}
+          topIndex={0}
+          viewportHeight={10}
+        />
+      );
+
+      const output = lastFrame();
+      expect(output).toContain('↙');
+      expect(output).toContain('main');
+      expect(output).toContain('feature-1');
+    });
+
+    it('should not show arrow icon for branches up-to-date with remote', () => {
+      const branchesUpToDate: BranchInfo[] = [
+        { name: 'main', current: true, commit: 'abc1234567', label: 'main' },
+        { name: 'feature-1', current: false, commit: 'def4567890', label: 'feature-1' },
+      ];
+
+      const { lastFrame } = render(
+        <BranchList
+          branches={branchesUpToDate}
+          selectedIndex={0}
+          topIndex={0}
+          viewportHeight={10}
+        />
+      );
+
+      const output = lastFrame();
+      expect(output).not.toContain('↙');
+    });
+  });
+
+  describe('Uncommitted Changes Indicator', () => {
+    it('should show indicator for current branch with uncommitted changes', () => {
+      const branchesWithChanges: BranchInfo[] = [
+        { name: 'main', current: true, commit: 'abc1234567', label: 'main', hasUncommittedChanges: true },
+        { name: 'feature-1', current: false, commit: 'def4567890', label: 'feature-1' },
+      ];
+
+      const { lastFrame } = render(
+        <BranchList
+          branches={branchesWithChanges}
+          selectedIndex={0}
+          topIndex={0}
+          viewportHeight={10}
+        />
+      );
+
+      const output = lastFrame();
+      expect(output).toContain('●');
+      expect(output).toContain('main');
+    });
+
+    it('should not show indicator for current branch without uncommitted changes', () => {
+      const branchesClean: BranchInfo[] = [
+        { name: 'main', current: true, commit: 'abc1234567', label: 'main', hasUncommittedChanges: false },
+      ];
+
+      const { lastFrame } = render(
+        <BranchList
+          branches={branchesClean}
+          selectedIndex={0}
+          topIndex={0}
+          viewportHeight={10}
+        />
+      );
+
+      const output = lastFrame();
+      expect(output).not.toContain('●');
+    });
+  });
+
+  describe('Combined Indicators', () => {
+    it('should show both arrow icon and uncommitted changes indicator', () => {
+      const branchesWithBoth: BranchInfo[] = [
+        {
+          name: 'main',
+          current: true,
+          commit: 'abc1234567',
+          label: 'main',
+          behindRemote: 2,
+          hasUncommittedChanges: true
+        },
+      ];
+
+      const { lastFrame } = render(
+        <BranchList
+          branches={branchesWithBoth}
+          selectedIndex={0}
+          topIndex={0}
+          viewportHeight={10}
+        />
+      );
+
+      const output = lastFrame();
+      expect(output).toContain('↙');
+      expect(output).toContain('●');
+      expect(output).toContain('main');
+    });
+  });
 });

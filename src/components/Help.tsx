@@ -16,9 +16,15 @@ export const Help: React.FC = () => {
         <Text>  <Text color="cyan">Enter</Text>        Checkout selected branch</Text>
         <Text></Text>
         <Text bold>Branch Actions</Text>
-        <Text>  <Text color="cyan">n</Text>            Create new branch from current</Text>
-        <Text>  <Text color="cyan">Delete</Text>       Safe delete branch (git branch -d)</Text>
-        <Text>  <Text color="cyan">Shift+Del</Text>    Force delete branch (git branch -D)</Text>
+        <Text>  <Text color="cyan">n</Text>            Create new branch</Text>
+        <Text>  <Text color="cyan">Delete</Text>       Delete branch</Text>
+        <Text></Text>
+        <Text bold>Git Operations</Text>
+        <Text>  <Text color="cyan">f</Text>            Fetch from remote</Text>
+        <Text>  <Text color="cyan">u</Text>            Pull (on current branch)</Text>
+        <Text>  <Text color="cyan">p</Text>            Push (on current branch)</Text>
+        <Text>  <Text color="cyan">m</Text>            Merge selected branch into current</Text>
+        <Text>  <Text color="cyan">r</Text>            Rebase current branch onto selected</Text>
         <Text></Text>
         <Text bold>Search</Text>
         <Text>  <Text color="cyan">/</Text>            Start search (fuzzy match)</Text>
@@ -27,7 +33,7 @@ export const Help: React.FC = () => {
         <Text></Text>
         <Text bold>Other</Text>
         <Text>  <Text color="cyan">h</Text>            Toggle this help</Text>
-        <Text>  <Text color="cyan">q</Text>            Quit</Text>
+        <Text>  <Text color="cyan">q</Text> or <Text color="cyan">Esc</Text>     Quit</Text>
       </Box>
 
       {/* Spacer to push status bar to bottom */}
