@@ -5,7 +5,7 @@ import { GitManager, validateBranchName } from '../utils/git.js';
 import { Help } from './Help.js';
 import { BranchList } from './BranchList.js';
 import { StatusBar } from './StatusBar.js';
-import { PromptBar } from './PromptBar.js';
+import { SelectionBar } from './SelectionBar.js';
 import { Header } from './Header.js';
 import { ErrorPane } from './ErrorPane.js';
 import { APP_VERSION } from '../utils/app-info.js';
@@ -17,8 +17,7 @@ interface Props {
 // UI overhead constants for viewport height calculation
 const UI_OVERHEAD = {
   HEADER: 2,
-  PROMPT_BAR: 1,
-  STATUS_BAR: 2,
+  COMBINED_STATUS_BAR: 2, // Combined prompt and status bar (2 lines)
   BORDERS: 2,
 } as const;
 
@@ -85,10 +84,12 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
   const [confirmation, setConfirmation] = useState<{
     active: boolean;
     branchName: string;
+    selectedIndex: number;
   } | null>(null);
   const [forceDeletePrompt, setForceDeletePrompt] = useState<{
     active: boolean;
     branchName: string;
+    selectedIndex: number;
   } | null>(null);
   const [creation, setCreation] = useState<{
     active: boolean;
@@ -99,22 +100,31 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
   const [checkoutPrompt, setCheckoutPrompt] = useState<{
     active: boolean;
     branchName: string;
+    selectedIndex: number;
   } | null>(null);
   const [savedSelectionIndex, setSavedSelectionIndex] = useState<number>(0);
   const [mergePrompt, setMergePrompt] = useState<{
     active: boolean;
     branchName: string;
+    selectedIndex: number;
   } | null>(null);
   const [rebasePrompt, setRebasePrompt] = useState<{
     active: boolean;
     branchName: string;
+    selectedIndex: number;
   } | null>(null);
   const [pushPrompt, setPushPrompt] = useState<{
     active: boolean;
     needsUpstream: boolean;
+    selectedIndex: number;
   } | null>(null);
   const [operationInProgress, setOperationInProgress] = useState<string | null>(null);
   const [showErrorPane, setShowErrorPane] = useState(false);
+  const [exitConfirmation, setExitConfirmation] = useState<{
+    active: boolean;
+    selectedIndex: number;
+  }>({ active: false, selectedIndex: 0 });
+  const [statusBarSelectionIndex, setStatusBarSelectionIndex] = useState(0);
 
   // Calculate viewport size - use full terminal height like vim
   const getViewportHeight = () => {
@@ -270,6 +280,7 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
     setConfirmation({
       active: true,
       branchName: selectedBranch.name,
+      selectedIndex: 0,
     });
   };
 
@@ -304,6 +315,7 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
         setForceDeletePrompt({
           active: true,
           branchName,
+          selectedIndex: 0,
         });
       } else {
         // Other errors - show error message
@@ -387,6 +399,7 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
       setCheckoutPrompt({
         active: true,
         branchName,
+        selectedIndex: 0,
       });
     } catch (err) {
       // Clear creation state and show error in StatusBar
@@ -462,6 +475,7 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
     setMergePrompt({
       active: true,
       branchName: selectedBranch.name,
+      selectedIndex: 0,
     });
   };
 
@@ -506,6 +520,7 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
     setRebasePrompt({
       active: true,
       branchName: selectedBranch.name,
+      selectedIndex: 0,
     });
   };
 
@@ -593,6 +608,7 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
         setPushPrompt({
           active: true,
           needsUpstream: true,
+          selectedIndex: 0,
         });
       } else {
         setError(parseGitError(err, 'Push'));
@@ -660,26 +676,23 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
     }
 
     if (filteredBranches.length === 0) {
-      return 'f: Fetch | h: Help';
+      return '4: Fetch | h: Help';
     }
 
     const selectedBranch = filteredBranches[selectedIndex];
     const isActiveBranch = selectedBranch?.current;
 
-    // Global commands (always available)
-    const globalHints = 'f: Fetch';
-
     // Branch-specific commands
     let branchHints: string;
     if (isActiveBranch) {
-      // Commands for active branch
-      branchHints = 'n: New Branch | u: Pull | p: Push';
+      // Commands for active branch: 1=New Branch, 2=Pull, 3=Push, 4=Fetch
+      branchHints = '1: New Branch | 2: Pull | 3: Push | 4: Fetch';
     } else {
-      // Commands for non-active branch
-      branchHints = 'Enter: Checkout | n: New Branch | Del: Delete | m: Merge | r: Rebase';
+      // Commands for non-active branch: 1=Checkout, 2=New Branch, 3=Delete, 4=Merge, 5=Rebase, 6=Fetch
+      branchHints = '1: Checkout | 2: New | 3: Delete | 4: Merge | 5: Rebase | 6: Fetch';
     }
 
-    return `${globalHints} | ${branchHints} | h: Help`;
+    return `${branchHints} | h: Help`;
   };
 
   // Helper function to calculate navigation indices
@@ -720,6 +733,80 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
     return { newIndex, newTopIndex };
   };
 
+  // Get context-aware actions for status bar navigation
+  const getContextActions = (): string[] => {
+    const selectedBranch = filteredBranches[selectedIndex];
+    if (!selectedBranch) return [];
+
+    if (selectedBranch.current) {
+      // Active branch actions
+      return ['New Branch', 'Pull', 'Push', 'Fetch'];
+    } else {
+      // Non-active branch actions
+      return ['Checkout', 'New', 'Delete', 'Merge', 'Rebase', 'Fetch'];
+    }
+  };
+
+  // Get keybinds for context actions
+  const getContextKeybinds = (): string[] => {
+    const selectedBranch = filteredBranches[selectedIndex];
+    if (!selectedBranch) return [];
+
+    if (selectedBranch.current) {
+      // Active branch keybinds
+      return ['1', '2', '3', '4'];
+    } else {
+      // Non-active branch keybinds
+      return ['1', '2', '3', '4', '5', '6'];
+    }
+  };
+
+  // Execute the selected action from status bar
+  const executeStatusBarAction = (actionIndex: number) => {
+    const selectedBranch = filteredBranches[selectedIndex];
+    if (!selectedBranch) return;
+
+    if (selectedBranch.current) {
+      // Active branch actions: ['New Branch', 'Pull', 'Push', 'Fetch']
+      switch (actionIndex) {
+        case 0: // New Branch
+          handleCreateRequest();
+          break;
+        case 1: // Pull
+          handlePullRequest();
+          break;
+        case 2: // Push
+          handlePushRequest();
+          break;
+        case 3: // Fetch
+          handleFetchRequest();
+          break;
+      }
+    } else {
+      // Non-active branch actions: ['Checkout', 'New', 'Delete', 'Merge', 'Rebase', 'Fetch']
+      switch (actionIndex) {
+        case 0: // Checkout
+          handleCheckout();
+          break;
+        case 1: // New
+          handleCreateRequest();
+          break;
+        case 2: // Delete
+          handleDeleteRequest();
+          break;
+        case 3: // Merge
+          handleMergeRequest();
+          break;
+        case 4: // Rebase
+          handleRebaseRequest();
+          break;
+        case 5: // Fetch
+          handleFetchRequest();
+          break;
+      }
+    }
+  };
+
   useInput((input, key) => {
     // Handle error pane dismissal
     if (showErrorPane) {
@@ -733,11 +820,46 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
       return;
     }
 
+    // Handle exit confirmation mode
+    if (exitConfirmation.active) {
+      if (key.leftArrow) {
+        setExitConfirmation((prev) => ({
+          ...prev,
+          selectedIndex: Math.max(0, prev.selectedIndex - 1),
+        }));
+      } else if (key.rightArrow) {
+        setExitConfirmation((prev) => ({
+          ...prev,
+          selectedIndex: Math.min(1, prev.selectedIndex + 1),
+        }));
+      } else if (key.return) {
+        // 0 = Yes, 1 = No
+        if (exitConfirmation.selectedIndex === 0) {
+          exit();
+        } else {
+          setExitConfirmation({ active: false, selectedIndex: 0 });
+        }
+      } else if (key.escape) {
+        // ESC cancels the exit
+        setExitConfirmation({ active: false, selectedIndex: 0 });
+      }
+      return;
+    }
+
     // Handle checkout prompt mode
     if (checkoutPrompt?.active) {
-      if (input === 'y' || input === 'Y') {
-        handleCheckoutPrompt(true);
-      } else {
+      if (key.leftArrow) {
+        setCheckoutPrompt((prev) =>
+          prev ? { ...prev, selectedIndex: Math.max(0, prev.selectedIndex - 1) } : null
+        );
+      } else if (key.rightArrow) {
+        setCheckoutPrompt((prev) =>
+          prev ? { ...prev, selectedIndex: Math.min(1, prev.selectedIndex + 1) } : null
+        );
+      } else if (key.return) {
+        // 0 = Yes, 1 = No
+        handleCheckoutPrompt(checkoutPrompt.selectedIndex === 0);
+      } else if (key.escape) {
         handleCheckoutPrompt(false);
       }
       return;
@@ -745,9 +867,22 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
 
     // Handle force delete prompt mode
     if (forceDeletePrompt?.active) {
-      if (input === 'y' || input === 'Y') {
-        handleForceDelete();
-      } else {
+      if (key.leftArrow) {
+        setForceDeletePrompt((prev) =>
+          prev ? { ...prev, selectedIndex: Math.max(0, prev.selectedIndex - 1) } : null
+        );
+      } else if (key.rightArrow) {
+        setForceDeletePrompt((prev) =>
+          prev ? { ...prev, selectedIndex: Math.min(1, prev.selectedIndex + 1) } : null
+        );
+      } else if (key.return) {
+        // 0 = Yes, 1 = No
+        if (forceDeletePrompt.selectedIndex === 0) {
+          handleForceDelete();
+        } else {
+          handleCancelForceDelete();
+        }
+      } else if (key.escape) {
         handleCancelForceDelete();
       }
       return;
@@ -755,19 +890,45 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
 
     // Handle confirmation mode
     if (confirmation?.active) {
-      if (input === 'y' || input === 'Y') {
-        handleConfirmDelete(false); // Normal delete
-      } else {
-        handleCancelDelete(); // Cancel on any other key
+      if (key.leftArrow) {
+        setConfirmation((prev) =>
+          prev ? { ...prev, selectedIndex: Math.max(0, prev.selectedIndex - 1) } : null
+        );
+      } else if (key.rightArrow) {
+        setConfirmation((prev) =>
+          prev ? { ...prev, selectedIndex: Math.min(1, prev.selectedIndex + 1) } : null
+        );
+      } else if (key.return) {
+        // 0 = Yes, 1 = No
+        if (confirmation.selectedIndex === 0) {
+          handleConfirmDelete(false);
+        } else {
+          handleCancelDelete();
+        }
+      } else if (key.escape) {
+        handleCancelDelete();
       }
       return;
     }
 
     // Handle merge prompt mode
     if (mergePrompt?.active) {
-      if (input === 'y' || input === 'Y') {
-        handleConfirmMerge();
-      } else {
+      if (key.leftArrow) {
+        setMergePrompt((prev) =>
+          prev ? { ...prev, selectedIndex: Math.max(0, prev.selectedIndex - 1) } : null
+        );
+      } else if (key.rightArrow) {
+        setMergePrompt((prev) =>
+          prev ? { ...prev, selectedIndex: Math.min(1, prev.selectedIndex + 1) } : null
+        );
+      } else if (key.return) {
+        // 0 = Yes, 1 = No
+        if (mergePrompt.selectedIndex === 0) {
+          handleConfirmMerge();
+        } else {
+          handleCancelMerge();
+        }
+      } else if (key.escape) {
         handleCancelMerge();
       }
       return;
@@ -775,9 +936,22 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
 
     // Handle rebase prompt mode
     if (rebasePrompt?.active) {
-      if (input === 'y' || input === 'Y') {
-        handleConfirmRebase();
-      } else {
+      if (key.leftArrow) {
+        setRebasePrompt((prev) =>
+          prev ? { ...prev, selectedIndex: Math.max(0, prev.selectedIndex - 1) } : null
+        );
+      } else if (key.rightArrow) {
+        setRebasePrompt((prev) =>
+          prev ? { ...prev, selectedIndex: Math.min(1, prev.selectedIndex + 1) } : null
+        );
+      } else if (key.return) {
+        // 0 = Yes, 1 = No
+        if (rebasePrompt.selectedIndex === 0) {
+          handleConfirmRebase();
+        } else {
+          handleCancelRebase();
+        }
+      } else if (key.escape) {
         handleCancelRebase();
       }
       return;
@@ -785,9 +959,22 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
 
     // Handle push prompt mode
     if (pushPrompt?.active) {
-      if (input === 'y' || input === 'Y') {
-        handleConfirmPush();
-      } else {
+      if (key.leftArrow) {
+        setPushPrompt((prev) =>
+          prev ? { ...prev, selectedIndex: Math.max(0, prev.selectedIndex - 1) } : null
+        );
+      } else if (key.rightArrow) {
+        setPushPrompt((prev) =>
+          prev ? { ...prev, selectedIndex: Math.min(1, prev.selectedIndex + 1) } : null
+        );
+      } else if (key.return) {
+        // 0 = Yes, 1 = No
+        if (pushPrompt.selectedIndex === 0) {
+          handleConfirmPush();
+        } else {
+          handleCancelPush();
+        }
+      } else if (key.escape) {
         handleCancelPush();
       }
       return;
@@ -851,11 +1038,33 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
     // Handle search mode
     if (search.active) {
       if (key.escape) {
+        // Exit search and preserve the selected branch
+        const selectedBranch = filteredBranches[selectedIndex];
         setSearch({ active: false, query: '', mode: 'normal' });
         setSearchValidationError(null);
+
+        // After search clears, find the selected branch in the full list and update index
+        if (selectedBranch) {
+          const newIndex = branches.findIndex(b => b.name === selectedBranch.name);
+          if (newIndex !== -1) {
+            setSelectedIndex(newIndex);
+            setTopIndex(0); // Reset viewport to top
+          }
+        }
       } else if (key.return) {
-        setSearch((prev) => ({ ...prev, active: false }));
+        // Exit search and preserve the selected branch
+        const selectedBranch = filteredBranches[selectedIndex];
+        setSearch({ active: false, query: '', mode: 'normal' });
         setSearchValidationError(null);
+
+        // After search clears, find the selected branch in the full list and update index
+        if (selectedBranch) {
+          const newIndex = branches.findIndex(b => b.name === selectedBranch.name);
+          if (newIndex !== -1) {
+            setSelectedIndex(newIndex);
+            setTopIndex(0); // Reset viewport to top
+          }
+        }
       } else if (key.backspace || key.delete) {
         setSearch((prev) => {
           // If query is already empty, exit search mode
@@ -895,7 +1104,14 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
 
     // Normal mode
     if (key.escape || input === 'q') {
-      exit();
+      setExitConfirmation({ active: true, selectedIndex: 0 });
+    } else if (key.leftArrow) {
+      // Navigate status bar left
+      setStatusBarSelectionIndex((prev) => Math.max(0, prev - 1));
+    } else if (key.rightArrow) {
+      // Navigate status bar right
+      const actions = getContextActions();
+      setStatusBarSelectionIndex((prev) => Math.min(actions.length - 1, prev + 1));
     } else if (key.upArrow || input === 'k') {
       const { newIndex, newTopIndex } = calculateNavigation(
         'up',
@@ -905,6 +1121,7 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
       );
       setSelectedIndex(newIndex);
       setTopIndex(newTopIndex);
+      setStatusBarSelectionIndex(0); // Reset status bar selection
       // Clear message on navigation
       if (message) setMessage(null);
     } else if (key.downArrow || input === 'j') {
@@ -916,47 +1133,103 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
       );
       setSelectedIndex(newIndex);
       setTopIndex(newTopIndex);
+      setStatusBarSelectionIndex(0); // Reset status bar selection
       // Clear message on navigation
       if (message) setMessage(null);
+    } else if (key.pageUp) {
+      // Page Up - move up by viewportHeight
+      const viewportHeight = getViewportHeight();
+      const newIndex = Math.max(0, selectedIndex - viewportHeight);
+      const newTopIndex = Math.max(0, newIndex);
+      setSelectedIndex(newIndex);
+      setTopIndex(newTopIndex);
+      setStatusBarSelectionIndex(0); // Reset status bar selection
+      if (message) setMessage(null);
+    } else if (key.pageDown) {
+      // Page Down - move down by viewportHeight
+      const viewportHeight = getViewportHeight();
+      const maxIndex = filteredBranches.length - 1;
+      const newIndex = Math.min(maxIndex, selectedIndex + viewportHeight);
+      const maxTopIndex = Math.max(0, filteredBranches.length - viewportHeight);
+      let newTopIndex = topIndex;
+
+      // Ensure new selection is visible
+      if (newIndex >= topIndex + viewportHeight) {
+        newTopIndex = Math.min(newIndex, maxTopIndex);
+      }
+
+      setSelectedIndex(newIndex);
+      setTopIndex(newTopIndex);
+      setStatusBarSelectionIndex(0); // Reset status bar selection
+      if (message) setMessage(null);
     } else if (key.return) {
-      handleCheckout();
+      // Execute selected status bar action
+      executeStatusBarAction(statusBarSelectionIndex);
     } else if (input === '/') {
       setError(null);
       setMessage(null);
       setSearch({ active: true, query: '', mode: 'normal' });
-    } else if (input === ':') {
+    } else if (input === '*') {
       setError(null);
       setMessage(null);
       setSearch({ active: true, query: '', mode: 'regex' });
     } else if (input === 'h') {
       setMessage(null);
       setShowHelp(true);
-    } else if (input === 'n') {
-      setMessage(null);
-      handleCreateRequest();
-    } else if (key.delete) {
-      // Delete - will prompt for normal or force delete
-      handleDeleteRequest();
-    } else if (input === 'f') {
-      // Fetch - always available (global command)
-      setMessage(null);
-      handleFetchRequest();
-    } else if (input === 'm') {
-      // Merge - only available when non-active branch is selected
-      setMessage(null);
-      handleMergeRequest();
-    } else if (input === 'r') {
-      // Rebase - only available when non-active branch is selected
-      setMessage(null);
-      handleRebaseRequest();
-    } else if (input === 'u') {
-      // Pull - only available when active branch is selected
-      setMessage(null);
-      handlePullRequest();
-    } else if (input === 'p') {
-      // Push - only available when active branch is selected
-      setMessage(null);
-      handlePushRequest();
+    } else if (input && /^[1-9]$/.test(input)) {
+      // Number key handling - context-aware
+      if (filteredBranches.length === 0) return;
+
+      const selectedBranch = filteredBranches[selectedIndex];
+      const isActiveBranch = selectedBranch?.current;
+
+      if (isActiveBranch) {
+        // Active branch context: 1=New Branch, 2=Pull, 3=Push, 4=Fetch
+        setMessage(null);
+        switch (input) {
+          case '1':
+            handleCreateRequest();
+            break;
+          case '2':
+            handlePullRequest();
+            break;
+          case '3':
+            handlePushRequest();
+            break;
+          case '4':
+            handleFetchRequest();
+            break;
+          default:
+            // Do nothing for other numbers in this context
+            break;
+        }
+      } else {
+        // Non-active branch context: 1=Checkout, 2=New Branch, 3=Delete, 4=Merge, 5=Rebase, 6=Fetch
+        setMessage(null);
+        switch (input) {
+          case '1':
+            handleCheckout();
+            break;
+          case '2':
+            handleCreateRequest();
+            break;
+          case '3':
+            handleDeleteRequest();
+            break;
+          case '4':
+            handleMergeRequest();
+            break;
+          case '5':
+            handleRebaseRequest();
+            break;
+          case '6':
+            handleFetchRequest();
+            break;
+          default:
+            // Do nothing for other numbers in this context
+            break;
+        }
+      }
     }
   });
 
@@ -973,58 +1246,64 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
   const viewportHeight = getViewportHeight();
   const cwd = process.cwd();
 
-  // Determine prompt bar content and mode
-  const getPromptBarProps = (): { text: string; mode: 'input' | 'keyListen' } => {
+  // Determine combined status bar props
+  const getStatusBarProps = (): {
+    promptText?: string;
+    promptMode?: 'input' | 'keyListen' | 'none';
+    message?: string | null;
+    error?: string | null;
+    hints?: string | null;
+  } => {
+    // Check if we have a prompt to show
     if (operationInProgress) {
       return {
-        text: operationInProgress,
-        mode: 'keyListen',
+        promptText: operationInProgress,
+        promptMode: 'keyListen',
       };
     }
 
     if (confirmation?.active) {
       return {
-        text: `Delete branch '${confirmation.branchName}'? (y/n)`,
-        mode: 'keyListen',
+        promptText: `Delete branch '${confirmation.branchName}'? (y/n)`,
+        promptMode: 'keyListen',
       };
     }
 
     if (forceDeletePrompt?.active) {
       return {
-        text: `Branch '${forceDeletePrompt.branchName}' is not fully merged. Force delete? (y/n)`,
-        mode: 'keyListen',
+        promptText: `Branch '${forceDeletePrompt.branchName}' is not fully merged. Force delete? (y/n)`,
+        promptMode: 'keyListen',
       };
     }
 
     if (checkoutPrompt?.active) {
       return {
-        text: `Checkout now? (y/n)`,
-        mode: 'keyListen',
+        promptText: `Checkout now? (y/n)`,
+        promptMode: 'keyListen',
       };
     }
 
     if (mergePrompt?.active) {
-      // Get current branch name
       const currentBranch = branches.find((b) => b.current);
       return {
-        text: `Merge '${mergePrompt.branchName}' into '${currentBranch?.name || 'current'}'? (y/n)`,
-        mode: 'keyListen',
+        promptText: `Merge '${mergePrompt.branchName}' into '${currentBranch?.name || 'current'}'? (y/n)`,
+        promptMode: 'keyListen',
       };
     }
 
     if (rebasePrompt?.active) {
       return {
-        text: `Rebase onto '${rebasePrompt.branchName}'? (y/n)`,
-        mode: 'keyListen',
+        promptText: `Rebase onto '${rebasePrompt.branchName}'? (y/n)`,
+        promptMode: 'keyListen',
       };
     }
 
     if (pushPrompt?.active) {
       return {
-        text: pushPrompt.needsUpstream
+        promptText: pushPrompt.needsUpstream
           ? `No upstream branch set. Push and set upstream? (y/n)`
           : `Push to remote? (y/n)`,
-        mode: 'keyListen',
+        promptMode: 'keyListen',
       };
     }
 
@@ -1035,8 +1314,8 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
         ? `${baseText} - Error: ${searchValidationError}`
         : baseText;
       return {
-        text,
-        mode: 'input',
+        promptText: text,
+        promptMode: 'input',
       };
     }
 
@@ -1047,19 +1326,36 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
         ? `${baseText} - Error: ${creation.validationError}`
         : baseText;
       return {
-        text,
-        mode: 'input',
+        promptText: text,
+        promptMode: 'input',
       };
     }
 
-    // Default empty state
+    // No prompt - show status/message/error/hints
     return {
-      text: '',
-      mode: 'input',
+      promptMode: 'none',
+      message,
+      error,
+      hints: generateHints(),
     };
   };
 
-  const promptBarProps = getPromptBarProps();
+  const statusBarProps = getStatusBarProps();
+
+  // Determine if we should show context actions
+  const shouldShowContextActions =
+    !operationInProgress &&
+    !confirmation?.active &&
+    !forceDeletePrompt?.active &&
+    !checkoutPrompt?.active &&
+    !mergePrompt?.active &&
+    !rebasePrompt?.active &&
+    !pushPrompt?.active &&
+    !search.active &&
+    !creation.active &&
+    !error &&
+    !message &&
+    filteredBranches.length > 0;
 
   // Show error pane if multi-line error is present
   if (showErrorPane && error) {
@@ -1079,14 +1375,62 @@ export const GitBranchUI: React.FC<Props> = ({ gitManager }) => {
         viewportHeight={viewportHeight}
       />
 
-      <PromptBar {...promptBarProps} />
-
-      <StatusBar
-        totalBranches={filteredBranches.length}
-        message={message}
-        error={error}
-        hints={generateHints()}
-      />
+      {exitConfirmation.active ? (
+        <SelectionBar
+          options={['Yes', 'No']}
+          selectedIndex={exitConfirmation.selectedIndex}
+          promptText="Exit?"
+        />
+      ) : confirmation?.active ? (
+        <SelectionBar
+          options={['Yes', 'No']}
+          selectedIndex={confirmation.selectedIndex}
+          promptText={`Delete branch '${confirmation.branchName}'?`}
+        />
+      ) : forceDeletePrompt?.active ? (
+        <SelectionBar
+          options={['Yes', 'No']}
+          selectedIndex={forceDeletePrompt.selectedIndex}
+          promptText={`Branch '${forceDeletePrompt.branchName}' is not fully merged. Force delete?`}
+        />
+      ) : checkoutPrompt?.active ? (
+        <SelectionBar
+          options={['Yes', 'No']}
+          selectedIndex={checkoutPrompt.selectedIndex}
+          promptText="Checkout now?"
+        />
+      ) : mergePrompt?.active ? (
+        <SelectionBar
+          options={['Yes', 'No']}
+          selectedIndex={mergePrompt.selectedIndex}
+          promptText={`Merge '${mergePrompt.branchName}' into '${branches.find((b) => b.current)?.name || 'current'}'?`}
+        />
+      ) : rebasePrompt?.active ? (
+        <SelectionBar
+          options={['Yes', 'No']}
+          selectedIndex={rebasePrompt.selectedIndex}
+          promptText={`Rebase onto '${rebasePrompt.branchName}'?`}
+        />
+      ) : pushPrompt?.active ? (
+        <SelectionBar
+          options={['Yes', 'No']}
+          selectedIndex={pushPrompt.selectedIndex}
+          promptText={
+            pushPrompt.needsUpstream
+              ? 'No upstream branch set. Push and set upstream?'
+              : 'Push to remote?'
+          }
+        />
+      ) : shouldShowContextActions ? (
+        <SelectionBar
+          options={getContextActions()}
+          selectedIndex={statusBarSelectionIndex}
+          keybinds={getContextKeybinds()}
+          backgroundColor="blue"
+        />
+      ) : (
+        <StatusBar {...statusBarProps} />
+      )}
     </Box>
   );
 };

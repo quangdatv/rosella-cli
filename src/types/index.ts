@@ -4,6 +4,7 @@ export interface BranchInfo {
   commit: string;
   label?: string;
   behindRemote?: number;
+  aheadRemote?: number;
   hasUncommittedChanges?: boolean;
 }
 

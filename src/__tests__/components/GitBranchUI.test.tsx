@@ -122,16 +122,16 @@ describe('GitBranchUI - Integration Tests', () => {
     });
 
     it('should show message when trying to checkout current branch', async () => {
-      const { lastFrame, stdin } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
+      const { lastFrame } = render(<GitBranchUI gitManager={mockGitManager as unknown as GitManager} />);
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Press Enter on current branch (main)
-      stdin.write('\r');
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
+      // When on current branch, Enter now executes the status bar action (default: New Branch)
+      // To explicitly test checkout on current branch, we need to checkout via the action
+      // Since checkout is for non-current branches, we'll verify the context actions are shown
       const output = lastFrame();
-      expect(output).toContain('Already on this branch');
+      // Current branch should show context actions
+      expect(output).toContain('1: New Branch');
       expect(mockGitManager.checkoutBranch).not.toHaveBeenCalled();
     });
   });
@@ -142,8 +142,8 @@ describe('GitBranchUI - Integration Tests', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Start creation
-      stdin.write('n');
+      // Start creation (1 = Create new branch when on current branch)
+      stdin.write('1');
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       // Type branch name
@@ -158,7 +158,8 @@ describe('GitBranchUI - Integration Tests', () => {
       expect(mockGitManager.createBranch).toHaveBeenCalledWith('new-feature', 'main');
 
       const output = lastFrame();
-      expect(output).toContain("Branch 'new-feature' created from 'main'");
+      // After creation, the UI shows the checkout prompt
+      // The success message is set but hidden by the prompt in the StatusBar
       expect(output).toContain('Checkout now?');
     });
 
@@ -167,16 +168,16 @@ describe('GitBranchUI - Integration Tests', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Create branch
-      stdin.write('n');
+      // Create branch (1 = Create new branch when on current branch)
+      stdin.write('1');
       await new Promise((resolve) => setTimeout(resolve, 50));
       stdin.write('new-feature');
       await new Promise((resolve) => setTimeout(resolve, 50));
       stdin.write('\r');
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Accept checkout
-      stdin.write('y');
+      // Accept checkout with Enter (Yes is selected by default)
+      stdin.write('\r');
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       expect(mockGitManager.checkoutBranch).toHaveBeenCalledWith('new-feature');
@@ -187,8 +188,8 @@ describe('GitBranchUI - Integration Tests', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Start creation
-      stdin.write('n');
+      // Start creation (1 = Create new branch when on current branch)
+      stdin.write('1');
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       // Type invalid branch name (with spaces)
@@ -209,8 +210,8 @@ describe('GitBranchUI - Integration Tests', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Start creation
-      stdin.write('n');
+      // Start creation (1 = Create new branch when on current branch)
+      stdin.write('1');
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       // Cancel
@@ -236,16 +237,16 @@ describe('GitBranchUI - Integration Tests', () => {
       stdin.write('j');
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Press Delete
-      stdin.write('\x7F');
+      // Press 3 to delete (3 = Delete when on non-active branch)
+      stdin.write('3');
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      // Confirm deletion
-      stdin.write('y');
+      // Confirm deletion with Enter (Yes is selected by default)
+      stdin.write('\r');
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       const output = lastFrame();
-      // Error should be displayed
+      // Error should be displayed (now as a force delete prompt)
       expect(output).toContain('not fully merged');
       // But UI should still be interactive (branch list should still be visible)
       expect(output).toContain('main');
@@ -261,12 +262,12 @@ describe('GitBranchUI - Integration Tests', () => {
       stdin.write('j');
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Press Delete
-      stdin.write('\x7F');
+      // Press 3 to delete (3 = Delete when on non-active branch)
+      stdin.write('3');
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      // Confirm deletion
-      stdin.write('y');
+      // Confirm deletion with Enter (Yes is selected by default)
+      stdin.write('\r');
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       expect(mockGitManager.deleteBranch).toHaveBeenCalledWith('feature-1', false);
@@ -280,12 +281,18 @@ describe('GitBranchUI - Integration Tests', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Try to delete current branch (main)
-      stdin.write('\x7F'); // Delete key
+      // With the new keybinding system, '3' on current branch triggers Push, not Delete
+      // So we can't trigger delete on current branch through normal UI
+      // However, handleDeleteRequest has a defensive check, so let's verify the UI behavior
+      // When on current branch, pressing '3' should show push confirmation, not delete
+      stdin.write('3'); // On current branch, this triggers Push
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       const output = lastFrame();
-      expect(output).toContain('Cannot delete the currently checked out branch');
+      // Should see push prompt, not delete prompt or error
+      expect(output).not.toContain('Cannot delete the currently checked out branch');
+      // deleteBranch should not be called
+      expect(mockGitManager.deleteBranch).not.toHaveBeenCalled();
     });
 
     it('should cancel deletion with any key other than y', async () => {
@@ -297,12 +304,12 @@ describe('GitBranchUI - Integration Tests', () => {
       stdin.write('j');
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      // Press Delete
-      stdin.write('\x7F');
+      // Press 3 to delete (3 = Delete when on non-active branch)
+      stdin.write('3');
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      // Cancel deletion
-      stdin.write('n');
+      // Cancel deletion with Escape or navigate to No and press Enter
+      stdin.write('\x1B'); // Escape
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       expect(mockGitManager.deleteBranch).not.toHaveBeenCalled();
@@ -323,9 +330,9 @@ describe('GitBranchUI - Integration Tests', () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       // Try to delete (will fail and show force delete prompt)
-      stdin.write('\x7F');
+      stdin.write('3'); // 3 = Delete when on non-active branch
       await new Promise((resolve) => setTimeout(resolve, 50));
-      stdin.write('y');
+      stdin.write('\r'); // Confirm with Enter
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Verify force delete prompt is shown
@@ -335,7 +342,7 @@ describe('GitBranchUI - Integration Tests', () => {
 
       // Accept force delete (mock will succeed this time)
       mockGitManager.deleteBranch.mockResolvedValueOnce(undefined);
-      stdin.write('y');
+      stdin.write('\r'); // Confirm with Enter
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Success message should be shown in StatusBar
@@ -373,7 +380,7 @@ describe('GitBranchUI - Integration Tests', () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Start regex search
-      stdin.write(':');
+      stdin.write('*');
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       // Type regex pattern character by character
@@ -477,8 +484,8 @@ describe('GitBranchUI - Integration Tests', () => {
       const output = lastFrame();
       // Should show branch list
       expect(output).toContain('main');
-      // Should show hints in status bar
-      expect(output).toContain('h: Help');
+      // Should show context actions in status bar
+      expect(output).toContain('1: New Branch');
     });
 
     it('should coordinate state across components', async () => {
@@ -486,13 +493,13 @@ describe('GitBranchUI - Integration Tests', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Navigate to change selected index
+      // Navigate to change selected index (moves to non-current branch)
       stdin.write('j');
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       const output = lastFrame();
-      // Status bar should show hints
-      expect(output).toContain('h: Help');
+      // Status bar should show context actions for non-current branch
+      expect(output).toContain('1: Checkout');
     });
   });
 });

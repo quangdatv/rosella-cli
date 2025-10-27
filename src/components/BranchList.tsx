@@ -16,6 +16,8 @@ export const BranchList: React.FC<Props> = ({
   viewportHeight,
 }) => {
   const visibleBranches = branches.slice(topIndex, topIndex + viewportHeight);
+  const hasMoreAbove = topIndex > 0;
+  const hasMoreBelow = topIndex + viewportHeight < branches.length;
 
   return (
     <Box flexDirection="column" borderStyle="round" paddingLeft={1} paddingRight={1} minHeight={viewportHeight}>
@@ -23,6 +25,11 @@ export const BranchList: React.FC<Props> = ({
         <Text dimColor>No branches found</Text>
       ) : (
         <>
+          {hasMoreAbove && (
+            <Box justifyContent="center">
+              <Text dimColor>▲ more above ▲</Text>
+            </Box>
+          )}
           {visibleBranches.map((branch, viewportIndex) => {
             const actualIndex = topIndex + viewportIndex;
             const isSelected = actualIndex === selectedIndex;
@@ -35,8 +42,18 @@ export const BranchList: React.FC<Props> = ({
               branchPrefix = '  ';
             }
 
-            // Add arrow icon for branches behind remote
-            const behindIcon = branch.behindRemote ? '↙ ' : '';
+            // Determine remote sync status icon and color
+            let remoteSyncIcon = '';
+            if (branch.aheadRemote && branch.behindRemote) {
+              // Diverged - both ahead and behind
+              remoteSyncIcon = '↕ ';
+            } else if (branch.aheadRemote) {
+              // Ahead of remote only
+              remoteSyncIcon = '↑ ';
+            } else if (branch.behindRemote) {
+              // Behind remote only
+              remoteSyncIcon = '↓ ';
+            }
 
             return (
               <Box key={branch.name}>
@@ -47,7 +64,7 @@ export const BranchList: React.FC<Props> = ({
                     ) : (
                       branchPrefix
                     )}
-                    {behindIcon}
+                    {remoteSyncIcon && <Text color="blue">{remoteSyncIcon}</Text>}
                     {branch.name}
                     <Text dimColor> ({branch.commit.substring(0, 7)})</Text>
                   </Text>
@@ -58,7 +75,7 @@ export const BranchList: React.FC<Props> = ({
                     ) : (
                       branchPrefix
                     )}
-                    {behindIcon}
+                    {remoteSyncIcon && <Text color="blue">{remoteSyncIcon}</Text>}
                     {branch.name}
                     <Text dimColor> ({branch.commit.substring(0, 7)})</Text>
                   </Text>
@@ -66,6 +83,11 @@ export const BranchList: React.FC<Props> = ({
               </Box>
             );
           })}
+          {hasMoreBelow && (
+            <Box justifyContent="center">
+              <Text dimColor>▼ more below ▼</Text>
+            </Box>
+          )}
         </>
       )}
     </Box>

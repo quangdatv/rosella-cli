@@ -75,11 +75,18 @@ export class GitManager {
           const isCurrent = parts[2] === '*';
           const trackingInfo = parts[3] || '';
 
-          // Extract behind count from tracking info like "[behind 3]"
+          // Extract ahead/behind count from tracking info like "[ahead 2, behind 3]", "[ahead 1]", or "[behind 2]"
           let behindRemote: number | undefined;
+          let aheadRemote: number | undefined;
+
           const behindMatch = trackingInfo.match(/behind (\d+)/);
           if (behindMatch) {
             behindRemote = parseInt(behindMatch[1], 10);
+          }
+
+          const aheadMatch = trackingInfo.match(/ahead (\d+)/);
+          if (aheadMatch) {
+            aheadRemote = parseInt(aheadMatch[1], 10);
           }
 
           branches.push({
@@ -88,6 +95,7 @@ export class GitManager {
             commit,
             label: name,
             behindRemote,
+            aheadRemote,
             hasUncommittedChanges: isCurrent ? hasUncommittedChanges : undefined,
           });
         }

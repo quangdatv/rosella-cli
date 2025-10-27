@@ -315,7 +315,7 @@ describe('BranchList', () => {
       );
 
       const output = lastFrame();
-      expect(output).toContain('↙');
+      expect(output).toContain('↓');
       expect(output).toContain('main');
       expect(output).toContain('feature-1');
     });
@@ -336,7 +336,7 @@ describe('BranchList', () => {
       );
 
       const output = lastFrame();
-      expect(output).not.toContain('↙');
+      expect(output).not.toContain('↓');
     });
   });
 
@@ -403,7 +403,7 @@ describe('BranchList', () => {
       );
 
       const output = lastFrame();
-      expect(output).toContain('↙');
+      expect(output).toContain('↓');
       expect(output).toContain('●');
       expect(output).toContain('main');
     });

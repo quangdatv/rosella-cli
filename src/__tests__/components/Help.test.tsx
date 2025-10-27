@@ -25,7 +25,7 @@ describe('Help', () => {
 
       const output = lastFrame();
       expect(output).toContain('↑/↓');
-      expect(output).toContain('Navigate up/down');
+      expect(output).toContain('Navigate branch list up/down');
     });
 
     it('should list vim key navigation', () => {
@@ -40,7 +40,7 @@ describe('Help', () => {
 
       const output = lastFrame();
       expect(output).toContain('Enter');
-      expect(output).toContain('Checkout selected branch');
+      expect(output).toContain('Execute selected action');
     });
   });
 
@@ -49,14 +49,14 @@ describe('Help', () => {
       const { lastFrame } = render(<Help />);
 
       const output = lastFrame();
-      expect(output).toContain('Branch Actions');
+      expect(output).toContain('Actions (Current Branch)');
     });
 
     it('should list create branch command', () => {
       const { lastFrame } = render(<Help />);
 
       const output = lastFrame();
-      expect(output).toContain('n');
+      expect(output).toContain('1');
       expect(output).toContain('Create new branch');
     });
 
@@ -64,7 +64,7 @@ describe('Help', () => {
       const { lastFrame } = render(<Help />);
 
       const output = lastFrame();
-      expect(output).toContain('Delete');
+      expect(output).toContain('3');
       expect(output).toContain('Delete branch');
     });
   });
@@ -90,7 +90,7 @@ describe('Help', () => {
       const { lastFrame } = render(<Help />);
 
       const output = lastFrame();
-      expect(output).toContain(':');
+      expect(output).toContain('*');
       expect(output).toContain('Start regex search');
     });
 
@@ -144,8 +144,8 @@ describe('Help', () => {
       const output = lastFrame();
       // Verify all major sections are present
       expect(output).toContain('Navigation');
-      expect(output).toContain('Branch Actions');
-      expect(output).toContain('Git Operations');
+      expect(output).toContain('Actions (Current Branch)');
+      expect(output).toContain('Actions (Other Branch)');
       expect(output).toContain('Search');
       expect(output).toContain('Other');
     });
@@ -163,9 +163,8 @@ describe('Help', () => {
 
       const output = lastFrame();
       const shortcuts = [
-        '↑/↓', 'j/k', 'Enter', 'n', 'Delete',
-        'f', 'u', 'p', 'm', 'r',
-        '/', ':', 'Esc', 'h', 'q'
+        '↑/↓', '←/→', 'j/k', 'Enter', '1', '2', '3', '4', '5', '6',
+        '/', '*', 'Esc', 'h', 'q'
       ];
 
       shortcuts.forEach(shortcut => {

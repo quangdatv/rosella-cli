@@ -12,28 +12,34 @@ export const Help: React.FC = () => {
       <Box flexDirection="column">
         <Text></Text>
         <Text bold>Navigation</Text>
-        <Text>  <Text color="cyan">↑/↓</Text> or <Text color="cyan">j/k</Text>   Navigate up/down</Text>
-        <Text>  <Text color="cyan">Enter</Text>        Checkout selected branch</Text>
+        <Text>  <Text color="cyan">↑/↓</Text> or <Text color="cyan">j/k</Text>     Navigate branch list up/down</Text>
+        <Text>  <Text color="cyan">←/→</Text>              Navigate status bar actions</Text>
+        <Text>  <Text color="cyan">PgUp/PgDn</Text>        Page up/down</Text>
+        <Text>  <Text color="cyan">Enter</Text>            Execute selected action</Text>
         <Text></Text>
-        <Text bold>Branch Actions</Text>
-        <Text>  <Text color="cyan">n</Text>            Create new branch</Text>
-        <Text>  <Text color="cyan">Delete</Text>       Delete branch</Text>
+        <Text bold>Actions (Current Branch)</Text>
+        <Text>  <Text color="cyan">1</Text>                Create new branch</Text>
+        <Text>  <Text color="cyan">2</Text>                Pull from remote</Text>
+        <Text>  <Text color="cyan">3</Text>                Push to remote</Text>
+        <Text>  <Text color="cyan">4</Text>                Fetch from remote</Text>
         <Text></Text>
-        <Text bold>Git Operations</Text>
-        <Text>  <Text color="cyan">f</Text>            Fetch from remote</Text>
-        <Text>  <Text color="cyan">u</Text>            Pull (on current branch)</Text>
-        <Text>  <Text color="cyan">p</Text>            Push (on current branch)</Text>
-        <Text>  <Text color="cyan">m</Text>            Merge selected branch into current</Text>
-        <Text>  <Text color="cyan">r</Text>            Rebase current branch onto selected</Text>
+        <Text bold>Actions (Other Branch)</Text>
+        <Text>  <Text color="cyan">1</Text>                Checkout branch</Text>
+        <Text>  <Text color="cyan">2</Text>                Create new branch</Text>
+        <Text>  <Text color="cyan">3</Text>                Delete branch</Text>
+        <Text>  <Text color="cyan">4</Text>                Merge into current</Text>
+        <Text>  <Text color="cyan">5</Text>                Rebase current onto selected</Text>
+        <Text>  <Text color="cyan">6</Text>                Fetch from remote</Text>
         <Text></Text>
         <Text bold>Search</Text>
-        <Text>  <Text color="cyan">/</Text>            Start search (fuzzy match)</Text>
-        <Text>  <Text color="cyan">:</Text>            Start regex search</Text>
-        <Text>  <Text color="cyan">Esc</Text>          Clear search</Text>
+        <Text>  <Text color="cyan">/</Text>                Start search (fuzzy match)</Text>
+        <Text>  <Text color="cyan">*</Text>                Start regex search</Text>
+        <Text>  <Text color="cyan">Enter</Text>            Exit search (keep selection)</Text>
+        <Text>  <Text color="cyan">Esc</Text>              Clear search</Text>
         <Text></Text>
         <Text bold>Other</Text>
-        <Text>  <Text color="cyan">h</Text>            Toggle this help</Text>
-        <Text>  <Text color="cyan">q</Text> or <Text color="cyan">Esc</Text>     Quit</Text>
+        <Text>  <Text color="cyan">h</Text>                Toggle this help</Text>
+        <Text>  <Text color="cyan">q</Text> or <Text color="cyan">Esc</Text>         Quit (with confirmation)</Text>
       </Box>
 
       {/* Spacer to push status bar to bottom */}

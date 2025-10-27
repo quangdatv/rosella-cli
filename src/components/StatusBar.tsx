@@ -1,89 +1,123 @@
 import React from 'react';
 import { Box, Text, useStdout } from 'ink';
 
+type PromptMode = 'input' | 'keyListen' | 'none';
+
 interface Props {
-  totalBranches: number;
+  promptText?: string;
+  promptMode?: PromptMode;
   message?: string | null;
   error?: string | null;
   hints?: string | null;
 }
 
-export const StatusBar: React.FC<Props> = ({ totalBranches, message, error, hints }) => {
+export const StatusBar: React.FC<Props> = ({
+  promptText = '',
+  promptMode = 'none',
+  message,
+  error,
+  hints,
+}) => {
   const { stdout } = useStdout();
   const width = stdout?.columns || 80;
 
-  // Primary content: Status, message, or error -> hints
-  const content = (() => {
-    // Error takes highest priority
-    if (error) {
-      return ` ${error} `;
-    }
-
-    // Message takes priority over default status
-    if (message) {
-      return ` ${message} `;
-    }
-
-    if (totalBranches === 0) {
-      return ' No branches ';
-    }
-
-    // Secondary content: Hints or empty
-    if (hints) {
-      return ` ${hints} `;
-    }
-
-    return ''; // Empty string instead of single space
-  })();
-
   // Helper to pad text to full width
   const padToWidth = (text: string, maxWidth: number): string => {
-    return text + ' '.repeat(Math.max(0, maxWidth - text.length));
+    // Remove ANSI codes to calculate actual visible length
+    // eslint-disable-next-line no-control-regex
+    const visibleLength = text.replace(/\u001b\[[0-9;]*m/g, '').length;
+    const padding = Math.max(0, maxWidth - visibleLength);
+    return text + ' '.repeat(padding);
   };
 
   let line1: string;
   let line2: string;
+  let backgroundColor: string;
+  let textColor: string;
 
-  // Determine what content to show
-  if (content.length <= width) {
-    // Fits on one line - put on line 1
-    line1 = padToWidth(content, width);
-    line2 = padToWidth('', width);
-  } else if (content.length <= width * 2) {
-    // Fits on two lines - split smartly
-    // Try to split at a word boundary near the middle
-    let splitPoint = width;
-    const searchStart = Math.max(0, width - 20);
-    const pipeIndex = content.lastIndexOf('|', width);
-
-    if (pipeIndex > searchStart) {
-      // Split at the last pipe before width
-      splitPoint = pipeIndex;
-      line1 = padToWidth(content.substring(0, splitPoint).trimEnd() + ' ', width);
-      line2 = padToWidth(content.substring(splitPoint).trimStart(), width);
+  // Determine what to show
+  if (promptMode !== 'none' && promptText) {
+    // Prompt mode - show prompt text
+    if (promptMode === 'input') {
+      // Input mode - show cursor
+      line1 = promptText;
+      line2 = '';
+      backgroundColor = 'white';
+      textColor = 'black';
     } else {
-      // No good split point - just split at width
-      line1 = padToWidth(content.substring(0, width), width);
-      line2 = padToWidth(content.substring(width), width);
+      // Key listen mode - yellow background for confirmation prompts
+      line1 = promptText;
+      line2 = '';
+      backgroundColor = 'yellow';
+      textColor = 'black';
     }
   } else {
-    // Too long for two lines - truncate
-    line1 = padToWidth(content.substring(0, width), width);
-    line2 = padToWidth(content.substring(width, width * 2 - 2) + '… ', width);
-  }
+    // Status mode - show error, message, or hints
+    const content = (() => {
+      if (error) {
+        return ` ${error} `;
+      }
+      if (message) {
+        return ` ${message} `;
+      }
+      if (hints) {
+        return ` ${hints} `;
+      }
+      return '';
+    })();
 
-  // Choose colors based on state
-  const backgroundColor = error ? 'red' : message ? 'green' : 'blue';
-  const textColor = 'white';
+    // Choose colors based on state
+    backgroundColor = error ? 'red' : message ? 'green' : 'blue';
+    textColor = 'white';
+
+    // Split content across two lines if needed
+    if (content.length <= width) {
+      // Fits on one line
+      line1 = content;
+      line2 = '';
+    } else if (content.length <= width * 2) {
+      // Fits on two lines - split smartly
+      let splitPoint = width;
+      const searchStart = Math.max(0, width - 20);
+      const pipeIndex = content.lastIndexOf('|', width);
+
+      if (pipeIndex > searchStart) {
+        // Split at the last pipe before width
+        splitPoint = pipeIndex;
+        line1 = content.substring(0, splitPoint).trimEnd() + ' ';
+        line2 = content.substring(splitPoint).trimStart();
+      } else {
+        // No good split point - just split at width
+        line1 = content.substring(0, width);
+        line2 = content.substring(width);
+      }
+    } else {
+      // Too long for two lines - truncate
+      line1 = content.substring(0, width);
+      line2 = content.substring(width, width * 2 - 2) + '… ';
+    }
+  }
 
   return (
     <Box flexDirection="column">
-      <Text backgroundColor={backgroundColor} color={textColor}>
-        {line1}
-      </Text>
-      <Text backgroundColor={backgroundColor} color={textColor}>
-        {line2}
-      </Text>
+      <Box>
+        {promptMode === 'input' ? (
+          <Text>
+            {line1}
+            <Text inverse> </Text>
+            {' '.repeat(Math.max(0, width - line1.length - 1))}
+          </Text>
+        ) : (
+          <Text backgroundColor={backgroundColor} color={textColor}>
+            {padToWidth(line1, width)}
+          </Text>
+        )}
+      </Box>
+      <Box>
+        <Text backgroundColor={backgroundColor} color={textColor}>
+          {padToWidth(line2, width)}
+        </Text>
+      </Box>
     </Box>
   );
 };
